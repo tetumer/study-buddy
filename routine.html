@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Routine</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>Weekly Routine</h1>
+
+<form id="routineForm">
+  <label>Day:</label>
+  <select id="routineDay">
+    <option>Monday</option>
+    <option>Tuesday</option>
+    <option>Wednesday</option>
+    <option>Thursday</option>
+    <option>Friday</option>
+    <option>Saturday</option>
+    <option>Sunday</option>
+  </select>
+
+  <label>Time (HH:MM):</label>
+  <input type="time" id="routineTime" required>
+
+  <label>Subject:</label>
+  <input type="text" id="routineSubject" required>
+
+  <button type="submit">Add to Routine</button>
+</form>
+
+<h2>Your Weekly Routine</h2>
+<div id="routineList"></div>
+
+<script src="script.js"></script>
+</body>
+</html>

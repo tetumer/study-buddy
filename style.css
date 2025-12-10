@@ -1,0 +1,188 @@
+/* ---------------- Body ---------------- */
+body {
+    font-family: Arial, sans-serif;
+    padding: 16px;
+    background: linear-gradient(135deg, #f5f7fa, #c3cfe2);
+    color: #111;
+    min-height: 100vh;
+}
+
+/* ---------------- Headings ---------------- */
+h1, h2, h3 {
+    margin: 8px 0;
+    color: #333;
+}
+
+/* ---------------- Subjects ---------------- */
+.subjects-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.subject-btn {
+    padding: 12px 18px;
+    border-radius: 12px;
+    border: none;
+    background: #4a90e2;
+    color: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 600;
+    transition: 0.3s;
+    min-width: 140px;
+    text-align: center;
+}
+
+.subject-btn:hover {
+    background: #357ABD;
+}
+
+/* ---------------- Timer Box ---------------- */
+.timer-box {
+    background: #fff;
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    width: 100%;
+    max-width: 420px;
+    margin: 20px auto;
+    text-align: center; /* center content inside */
+}
+
+/* ---------------- Inputs ---------------- */
+input[type="number"], input[type="text"], input[type="date"], select {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 12px;
+    font-size: 15px;
+}
+
+/* ---------------- General Buttons ---------------- */
+button, .big-button, .timer-box button {
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: none;
+    padding: 10px 16px;
+    transition: 0.3s;
+    min-width: 100px;
+    margin: 6px 4px 6px 0;
+    text-align: center;
+}
+
+button:hover, .big-button:hover, .timer-box button:hover {
+    filter: brightness(90%);
+}
+
+/* ---------------- Goal Buttons ---------------- */
+#goalBtn, .goal-page-btn {
+    background: #FF7F50;
+    color: #fff;
+}
+
+#goalBtn:hover, .goal-page-btn:hover {
+    background: #FF5722;
+}
+
+/* ---------------- Goal Cards ---------------- */
+.goalCard {
+    background: #fff;
+    padding: 14px 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.1);
+}
+
+.goalCard h3 {
+    margin: 0 0 6px 0;
+    font-size: 18px;
+}
+
+.goalCard p {
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+.goalCard button {
+    background: #e74c3c;
+    color: #fff;
+    font-size: 14px;
+    padding: 8px 12px;
+    border-radius: 10px;
+}
+
+.goalCard button:hover {
+    background: #c0392b;
+}
+
+/* ---------------- Routine Inputs ---------------- */
+#routineSubject, #routineTime, #routineDay, #routineForm button {
+    width: 200px;
+    display: inline-block;
+    padding: 8px 10px;
+    font-size: 14px;
+    margin-right: 8px;
+}
+
+/* ---------------- Reminder Cards ---------------- */
+.reminder-card, #dashboardReminders div {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 10px 0;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.12);
+    font-family: sans-serif;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.reminder-card h3 {
+    font-size: 16px;
+    margin: 0 0 6px 0;
+}
+
+.reminder-card p, #dashboardReminders div p {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.reminder-card span, #dashboardReminders div span {
+    margin-top: 4px;
+    display: inline-block;
+    font-size: 13px;
+    opacity: 0.7;
+}
+
+/* ---------------- Timer Buttons ---------------- */
+#startTimerBtn, #stopTimerBtn {
+    background: #4CAF50;
+    color: #fff;
+}
+
+#startTimerBtn:hover, #stopTimerBtn:hover {
+    background: #45a049;
+}
+
+/* ---------------- Back Button ---------------- */
+#backBtn {
+    background: #888;
+    color: #fff;
+}
+
+#backBtn:hover {
+    background: #555;
+}
+
+/* ---------------- Hidden ---------------- */
+.hidden {
+    display: none;
+}
+

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Study Session</title>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<h2 id="studySubject">Studying</h2>
+
+<div class="timer-box">
+  <label>Set Timer (minutes):</label>
+  <input type="number" id="timerInput" value="30" min="1">
+  <div id="timerDisplay" style="font-size:36px; text-align:center; margin:12px 0;">00:00</div>
+  <div style="display:flex; gap:8px;">
+    <button id="startTimerBtn">Start</button>
+    <button id="stopTimerBtn" disabled>Stop</button>
+    <button id="backBtn">Back</button>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

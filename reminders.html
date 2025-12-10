@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily Reminders</title>
+<style>
+/* ---------------- Body ---------------- */
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(to right, #ffecd2, #fcb69f);
+    color: #111;
+    padding: 16px;
+    min-height: 100vh;
+}
+
+/* ---------------- Headings ---------------- */
+h1, h2 {
+    margin: 8px 0;
+    text-align: center;
+}
+
+/* ---------------- Reminder Box ---------------- */
+.reminder-form {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 500px;
+    margin: 0 auto 20px auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.reminder-form input, .reminder-form button {
+    padding: 10px;
+    margin: 6px 0;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 16px;
+}
+
+.reminder-form button {
+    background: #FF7F50;
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.reminder-form button:hover {
+    background: #FF5722;
+}
+
+/* ---------------- Reminder Cards ---------------- */
+.reminder-card {
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 10px auto;
+    max-width: 500px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.reminder-card span {
+    font-weight: 600;
+    margin-right: 10px;
+}
+
+.reminder-card button {
+    padding: 6px 12px;
+    background: #e74c3c;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.reminder-card button:hover {
+    background: #c0392b;
+}
+
+/* ---------------- Alert ---------------- */
+#reminderAlert {
+    max-width: 500px;
+    margin: 10px auto;
+    padding: 14px 16px;
+    background: #FFF3CD;
+    border: 1px solid #FFEEBA;
+    border-radius: 12px;
+    text-align: center;
+    font-weight: 600;
+    display: none;
+}
+
+.hidden { display: none; }
+
+</style>
+</head>
+<body>
+
+<h1>Daily Reminders</h1>
+
+<div class="reminder-form">
+    <input type="text" id="reminderTask" placeholder="Reminder task">
+    <input type="time" id="reminderTime" placeholder="Optional time">
+    <button id="addReminderBtn">Add Reminder</button>
+</div>
+
+<div id="reminderAlert" class="hidden">
+    ⚠️ Reminder: <span id="alertTask"></span> is due today!
+</div>
+
+<div id="reminderList"></div>
+
+<script>
+/* ---------------- Local Storage Keys ---------------- */
+const REMINDER_KEY = "dailyReminders";
+
+/* ---------------- Helpers ---------------- */
+function randomColor() {
+    return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+}
+
+function todayDate() {
+    return new Date().toISOString().split("T")[0];
+}
+
+/* ---------------- Load & Render Reminders ---------------- */
+function loadReminders() {
+    const raw = localStorage.getItem(REMINDER_KEY);
+    const reminders = raw ? JSON.parse(raw) : [];
+    return reminders.filter(r => r.date === todayDate());
+}
+
+function saveReminders(reminders) {
+    const all = JSON.parse(localStorage.getItem(REMINDER_KEY) || "[]");
+    // remove today's old reminders
+    const others = all.filter(r => r.date !== todayDate());
+    localStorage.setItem(REMINDER_KEY, JSON.stringify([...others, ...reminders]));
+}
+
+function renderReminders() {
+    const container = document.getElementById("reminderList");
+    container.innerHTML = "";
+    const reminders = loadReminders();
+    if (!reminders.length) return;
+
+    reminders.forEach(r => {
+        const div = document.createElement("div");
+        div.className = "reminder-card";
+        div.style.borderLeft = `6px solid ${randomColor()}`;
+
+        const span = document.createElement("span");
+        span.textContent = r.task + (r.time ? ` (${r.time})` : "");
+
+        const btn = document.createElement("button");
+        btn.textContent = "Delete";
+        btn.onclick = () => deleteReminder(r.id);
+
+        div.appendChild(span);
+        div.appendChild(btn);
+        container.appendChild(div);
+    });
+}
+
+/* ---------------- Add / Delete ---------------- */
+function addReminder(task, time) {
+    if (!task) return alert("Please enter a task!");
+    const reminders = loadReminders();
+    const newReminder = {
+        id: Date.now(),
+        task,
+        time: time || "",
+        date: todayDate()
+    };
+    reminders.push(newReminder);
+    saveReminders(reminders);
+    renderReminders();
+}
+
+function deleteReminder(id) {
+    let reminders = loadReminders();
+    reminders = reminders.filter(r => r.id !== id);
+    saveReminders(reminders);
+    renderReminders();
+}
+
+/* ---------------- Alert ---------------- */
+function checkAlerts() {
+    const reminders = loadReminders();
+    const alertBox = document.getElementById("reminderAlert");
+    const alertTask = document.getElementById("alertTask");
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    let urgent = reminders.find(r => {
+        if (!r.time) return true; // show all without time
+        const [h, m] = r.time.split(":").map(Number);
+        const remindTime = new Date();
+        remindTime.setHours(h, m, 0, 0);
+        return nowMs >= remindTime.getTime() - 1000*60*60*24; // any time before day ends
+    });
+
+    if (urgent) {
+        alertTask.textContent = urgent.task;
+        alertBox.style.display = "block";
+    } else {
+        alertBox.style.display = "none";
+    }
+}
+
+/* ---------------- Events ---------------- */
+document.getElementById("addReminderBtn").addEventListener("click", () => {
+    const task = document.getElementById("reminderTask").value.trim();
+    const time = document.getElementById("reminderTime").value;
+    addReminder(task, time);
+    document.getElementById("reminderTask").value = "";
+    document.getElementById("reminderTime").value = "";
+});
+
+/* ---------------- Initialize ---------------- */
+renderReminders();
+checkAlerts();
+
+// Check alerts every minute
+setInterval(checkAlerts, 60*1000);
+
+</script>
+</body>
+</html>
