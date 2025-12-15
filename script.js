@@ -235,6 +235,7 @@ function initStudy() {
   // Combined notification + sound
   function notifyTimerEnd(subject) {
     const sound = document.getElementById("alarmSound");
+
     if (sound) {
       sound.currentTime = 0;
       sound.play();
@@ -256,8 +257,13 @@ function initStudy() {
       });
     }
 
-    if (Notification.permission === "denied") {
+    // Fallback alert — clicking OK will stop alarm
+    if (Notification.permission === "denied" || Notification.permission !== "granted") {
       alert(`⏰ Time's up! Your ${subject} session has ended.`);
+      if (sound) {
+        sound.pause();
+        sound.currentTime = 0; // reset
+      }
     }
   }
 
