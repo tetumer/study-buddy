@@ -223,10 +223,10 @@ function initStudy() {
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
   let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
   let activeSubject = localStorage.getItem("activeSubject");
-  let elapsedMinutes = parseInt(localStorage.getItem("elapsedMinutes")) || 0;
+  let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
   // Show correct subject (stick to active one if timer is running)
-  if (activeSubject && (startTime || elapsedMinutes > 0)) {
+  if (activeSubject && (startTime || elapsedMs > 0)) {
     studySubjectEl.textContent = `Studying: ${activeSubject}`;
   } else {
     studySubjectEl.textContent = `Studying: ${subject}`;
@@ -234,14 +234,12 @@ function initStudy() {
 
   // Combined notification + sound
   function notifyTimerEnd(subject) {
-    // Play sound
     const sound = document.getElementById("alarmSound");
     if (sound) {
       sound.currentTime = 0;
       sound.play();
     }
 
-    // Show browser notification
     if (Notification.permission === "granted") {
       new Notification("Study Buddy", {
         body: `⏰ Your ${subject} session has ended.`,
@@ -258,7 +256,6 @@ function initStudy() {
       });
     }
 
-    // Fallback alert
     if (Notification.permission === "denied") {
       alert(`⏰ Time's up! Your ${subject} session has ended.`);
     }
@@ -281,7 +278,7 @@ function initStudy() {
       localStorage.removeItem("timerDuration");
       localStorage.removeItem("timerSetMinutes");
       localStorage.removeItem("activeSubject");
-      localStorage.removeItem("elapsedMinutes");
+      localStorage.removeItem("elapsedMs");
       onSessionComplete(activeSubject, setMinutes);
       notifyTimerEnd(activeSubject);
       if (startBtn) {
@@ -297,13 +294,12 @@ function initStudy() {
   }
 
   function startTimer() {
-    const savedElapsed = parseInt(localStorage.getItem("elapsedMinutes")) || 0;
+    const savedElapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
 
-    if (savedElapsed > 0) {
-      // Resume from where we left off
-      durationMs = (setMinutes - savedElapsed) * 60 * 1000;
-      localStorage.removeItem("elapsedMinutes");
+    if (savedElapsedMs > 0) {
+      durationMs = setMinutes * 60 * 1000 - savedElapsedMs;
+      localStorage.removeItem("elapsedMs");
     } else {
       durationMs = setMinutes * 60 * 1000;
     }
@@ -331,14 +327,13 @@ function initStudy() {
     if (timerId) clearInterval(timerId);
     timerId = null;
 
-    let elapsedMs = Date.now() - startTime;
-    elapsedMinutes = Math.round(elapsedMs / 60000);
-
-    localStorage.setItem("elapsedMinutes", elapsedMinutes);
+    elapsedMs = Date.now() - startTime;
+    localStorage.setItem("elapsedMs", elapsedMs);
 
     localStorage.removeItem("timerStart");
     localStorage.removeItem("timerDuration");
 
+    const elapsedMinutes = Math.floor(elapsedMs / 60000); // floor instead of round
     onSessionComplete(activeSubject, elapsedMinutes);
 
     if (startBtn) {
@@ -354,7 +349,6 @@ function initStudy() {
   if (stopBtn) stopBtn.onclick = stopTimer;
   if (backBtn) backBtn.onclick = () => window.location.href = "index.html";
 
-  // Ask for notification permission when page loads
   if (Notification.permission !== "granted" && Notification.permission !== "denied") {
     Notification.requestPermission();
   }
