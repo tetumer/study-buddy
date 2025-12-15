@@ -206,6 +206,7 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
+
 function initStudy() {
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
@@ -217,14 +218,51 @@ function initStudy() {
   const display = document.getElementById("timerDisplay");
   const backBtn = document.getElementById("backBtn");
 
-  if (studySubjectEl) studySubjectEl.textContent = `Studying: ${subject}`;
-
   let timerId = null;
-
-  // Restore timer from localStorage if any
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
   let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
+  let activeSubject = localStorage.getItem("activeSubject");
+  let elapsedMinutes = parseInt(localStorage.getItem("elapsedMinutes")) || 0;
+
+  // Show correct subject (stick to active one if timer is running)
+  if (activeSubject && (startTime || elapsedMinutes > 0)) {
+    studySubjectEl.textContent = `Studying: ${activeSubject}`;
+  } else {
+    studySubjectEl.textContent = `Studying: ${subject}`;
+  }
+
+  // Combined notification + sound
+  function notifyTimerEnd(subject) {
+    // Play sound
+    const sound = document.getElementById("alarmSound");
+    if (sound) {
+      sound.currentTime = 0;
+      sound.play();
+    }
+
+    // Show browser notification
+    if (Notification.permission === "granted") {
+      new Notification("Study Buddy", {
+        body: `⏰ Your ${subject} session has ended.`,
+        icon: "icon.png"
+      });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          new Notification("Study Buddy", {
+            body: `⏰ Your ${subject} session has ended.`,
+            icon: "icon.png"
+          });
+        }
+      });
+    }
+
+    // Fallback alert
+    if (Notification.permission === "denied") {
+      alert(`⏰ Time's up! Your ${subject} session has ended.`);
+    }
+  }
 
   function updateTimerDisplay() {
     if (!display) return;
@@ -234,7 +272,6 @@ function initStudy() {
     }
     const now = Date.now();
     let remainingSec = Math.ceil((startTime + durationMs - now) / 1000);
-
     if (remainingSec <= 0) {
       remainingSec = 0;
       display.textContent = "00:00";
@@ -243,53 +280,73 @@ function initStudy() {
       localStorage.removeItem("timerStart");
       localStorage.removeItem("timerDuration");
       localStorage.removeItem("timerSetMinutes");
-      onSessionComplete(subject, setMinutes);
-      if (startBtn) startBtn.disabled = false;
+      localStorage.removeItem("activeSubject");
+      localStorage.removeItem("elapsedMinutes");
+      onSessionComplete(activeSubject, setMinutes);
+      notifyTimerEnd(activeSubject);
+      if (startBtn) {
+        startBtn.textContent = "Start";
+        startBtn.disabled = false;
+      }
       if (stopBtn) stopBtn.disabled = true;
       return;
     }
-
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     display.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   function startTimer() {
+    const savedElapsed = parseInt(localStorage.getItem("elapsedMinutes")) || 0;
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
-    durationMs = setMinutes * 60 * 1000;
-    startTime = Date.now();
 
-    // Save to localStorage
+    if (savedElapsed > 0) {
+      // Resume from where we left off
+      durationMs = (setMinutes - savedElapsed) * 60 * 1000;
+      localStorage.removeItem("elapsedMinutes");
+    } else {
+      durationMs = setMinutes * 60 * 1000;
+    }
+
+    startTime = Date.now();
+    activeSubject = subject;
+
     localStorage.setItem("timerStart", startTime);
     localStorage.setItem("timerDuration", durationMs);
     localStorage.setItem("timerSetMinutes", setMinutes);
+    localStorage.setItem("activeSubject", activeSubject);
 
     updateTimerDisplay();
-    if (startBtn) startBtn.disabled = true;
+
+    if (startBtn) {
+      startBtn.textContent = "Start";
+      startBtn.disabled = true;
+    }
     if (stopBtn) stopBtn.disabled = false;
 
     timerId = setInterval(updateTimerDisplay, 1000);
   }
 
-  // ✅ Fixed stopTimer: calculates actual elapsed time
   function stopTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
 
-    // Calculate elapsed time in minutes
     let elapsedMs = Date.now() - startTime;
-    let elapsedMinutes = Math.round(elapsedMs / 60000); // round to nearest minute
+    elapsedMinutes = Math.round(elapsedMs / 60000);
 
-    // Clean up localStorage
+    localStorage.setItem("elapsedMinutes", elapsedMinutes);
+
     localStorage.removeItem("timerStart");
     localStorage.removeItem("timerDuration");
-    localStorage.removeItem("timerSetMinutes");
 
-    // Report actual elapsed time
-    onSessionComplete(subject, elapsedMinutes);
+    onSessionComplete(activeSubject, elapsedMinutes);
 
-    if (startBtn) startBtn.disabled = false;
+    if (startBtn) {
+      startBtn.textContent = "Resume";
+      startBtn.disabled = false;
+    }
     if (stopBtn) stopBtn.disabled = true;
+
     updateTimerDisplay();
   }
 
@@ -297,16 +354,20 @@ function initStudy() {
   if (stopBtn) stopBtn.onclick = stopTimer;
   if (backBtn) backBtn.onclick = () => window.location.href = "index.html";
 
-  // Update display immediately (in case a timer was running while tab suspended)
+  // Ask for notification permission when page loads
+  if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+
   updateTimerDisplay();
 
-  // Keep interval running to update display every second
   if (!timerId && startTime && durationMs) {
     timerId = setInterval(updateTimerDisplay, 1000);
     if (startBtn) startBtn.disabled = true;
     if (stopBtn) stopBtn.disabled = false;
   }
 }
+
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
