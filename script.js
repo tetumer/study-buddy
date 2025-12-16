@@ -206,8 +206,13 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
+// Prevent crashes if called
+function onSessionComplete(subject, minutes) {
+  console.log(`Session complete: ${subject} — ${minutes} min`);
+}
+
 function initStudy() {
-  console.log("initStudy loaded");
+  console.log("initStudy: starting");
 
   // DOM
   const sound = document.getElementById("alarmSound");
@@ -218,9 +223,12 @@ function initStudy() {
   const display = document.getElementById("timerDisplay");
   const backBtn = document.getElementById("backBtn");
 
-  if (!startBtn || !stopBtn || !timerInput || !display || !studySubjectEl) return;
+  if (!startBtn || !stopBtn || !timerInput || !display || !studySubjectEl) {
+    console.error("initStudy: missing DOM elements");
+    return;
+  }
 
-  // Unlock audio (required by browser)
+  // Prime audio on first Start click (unlock autoplay)
   if (sound) {
     startBtn.addEventListener(
       "click",
@@ -228,7 +236,8 @@ function initStudy() {
         sound.play().then(() => {
           sound.pause();
           sound.currentTime = 0;
-        }).catch(() => {});
+          console.log("Audio primed/unlocked");
+        }).catch(err => console.error("Audio unlock failed:", err));
       },
       { once: true }
     );
@@ -236,49 +245,66 @@ function initStudy() {
 
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
-  studySubjectEl.textContent = `Studying: ${subject}`;
 
   let timerId = null;
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
+  let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
+  let activeSubject = localStorage.getItem("activeSubject");
   let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
-  /* ---------- ALARM ---------- */
-  function notifyTimerEnd(subj) {
-    if (sound) {
-      sound.currentTime = 0;
-      sound.loop = true;
-      sound.play().catch(() => {});
-    }
-
-    setTimeout(() => {
-      alert(`⏰ Time's up! Your ${subj} session has ended.`);
-      if (sound) {
-        sound.pause();
-        sound.loop = false;
-        sound.currentTime = 0;
-      }
-    }, 100);
+  if (activeSubject && (startTime || elapsedMs > 0)) {
+    studySubjectEl.textContent = `Studying: ${activeSubject}`;
+  } else {
+    studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
-  function updateTimer() {
-    if (!startTime || !durationMs) return;
+  function notifyTimerEnd(subj) {
+    console.log("notifyTimerEnd fired for", subj);
+    if (sound) {
+      sound.currentTime = 0;
+      sound.play()
+        .then(() => console.log("Alarm playing"))
+        .catch(err => console.error("Alarm failed:", err));
+    }
 
-    const remainingSec = Math.ceil(
-      (startTime + durationMs - Date.now()) / 1000
-    );
+    if (Notification.permission === "granted") {
+      new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
+        }
+      });
+    }
+
+    // Fallback alert
+    if (Notification.permission === "denied" || Notification.permission !== "granted") {
+      alert(`⏰ Time's up! Your ${subj} session has ended.`);
+    }
+  }
+
+  function updateTimerDisplay() {
+    if (!startTime || !durationMs) {
+      display.textContent = "00:00";
+      return;
+    }
+    const now = Date.now();
+    let remainingSec = Math.ceil((startTime + durationMs - now) / 1000);
 
     if (remainingSec <= 0) {
+      display.textContent = "00:00";
       clearInterval(timerId);
       timerId = null;
-      display.textContent = "00:00";
 
       localStorage.removeItem("timerStart");
       localStorage.removeItem("timerDuration");
+      localStorage.removeItem("timerSetMinutes");
+      localStorage.removeItem("activeSubject");
       localStorage.removeItem("elapsedMs");
 
-      onSessionComplete(subject, Math.round(durationMs / 60000));
-      notifyTimerEnd(subject);
+      onSessionComplete(activeSubject || subject, setMinutes || (parseInt(timerInput.value) || 0));
+      notifyTimerEnd(activeSubject || subject);
 
       startBtn.textContent = "Start";
       startBtn.disabled = false;
@@ -288,59 +314,78 @@ function initStudy() {
 
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
-    display.textContent =
-      `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    display.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   function startTimer() {
-    const inputMinutes = Math.max(1, parseInt(timerInput.value) || 30);
+    const savedElapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
+    setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
 
-    if (!durationMs) {
-      durationMs = inputMinutes * 60 * 1000;
-      elapsedMs = 0;
-    }
+    durationMs = setMinutes * 60 * 1000 - (savedElapsedMs > 0 ? savedElapsedMs : 0);
+    if (durationMs < 0) durationMs = 0;
 
-    startTime = Date.now() - elapsedMs;
+    startTime = Date.now();
+    activeSubject = subject;
 
-    localStorage.setItem("timerStart", startTime);
-    localStorage.setItem("timerDuration", durationMs);
+    localStorage.setItem("timerStart", String(startTime));
+    localStorage.setItem("timerDuration", String(durationMs));
+    localStorage.setItem("timerSetMinutes", String(setMinutes));
+    localStorage.setItem("activeSubject", activeSubject);
     localStorage.removeItem("elapsedMs");
 
-    timerId = setInterval(updateTimer, 1000);
-    updateTimer();
+    updateTimerDisplay();
 
-    startBtn.textContent = elapsedMs > 0 ? "Resume" : "Start";
+    startBtn.textContent = "Start";
     startBtn.disabled = true;
     stopBtn.disabled = false;
+
+    timerId = setInterval(updateTimerDisplay, 1000);
+    console.log("startTimer: started", { setMinutes, durationMs });
   }
 
   function stopTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
 
-    elapsedMs = Date.now() - startTime;
-    localStorage.setItem("elapsedMs", elapsedMs);
+    if (startTime) {
+      elapsedMs = Date.now() - startTime;
+      localStorage.setItem("elapsedMs", String(elapsedMs));
+    }
+
+    localStorage.removeItem("timerStart");
+    localStorage.removeItem("timerDuration");
+
+    const elapsedMinutes = Math.floor((elapsedMs || 0) / 60000);
+    onSessionComplete(activeSubject || subject, elapsedMinutes);
 
     startBtn.textContent = "Resume";
     startBtn.disabled = false;
     stopBtn.disabled = true;
+
+    updateTimerDisplay();
+    console.log("stopTimer: stopped", { elapsedMs, elapsedMinutes });
   }
 
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
-  if (backBtn) backBtn.onclick = () => (location.href = "index.html");
+  if (backBtn) backBtn.onclick = () => (window.location.href = "index.html");
 
-  // Resume automatically if page reloads mid-session
-  if (startTime && durationMs) {
-    timerId = setInterval(updateTimer, 1000);
-    startBtn.textContent = "Resume";
+  if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+    Notification.requestPermission().catch(() => {});
+  }
+
+  updateTimerDisplay();
+
+  if (!timerId && startTime && durationMs) {
+    timerId = setInterval(updateTimerDisplay, 1000);
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    updateTimer();
-  } else {
-    display.textContent = "00:00";
+    console.log("initStudy: resuming existing timer");
   }
+
+  console.log("initStudy: ready");
 }
+
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
