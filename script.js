@@ -205,11 +205,22 @@ function scheduleDashboardReminderUpdates() {
   }, 5000);
 }
 
-/* ---------------- STUDY PAGE ---------------- */
+/* ---------------- STUDY PAGE ---------------- *//* ---------------- STUDY PAGE ---------------- */
+
+// Placeholder so your code doesn't crash
+function onSessionComplete(subject, minutes) {
+  console.log(`Session complete: ${subject}, ${minutes} minutes`);
+}
+
 function initStudy() {
   const sound = document.getElementById("alarmSound");
+  const startBtn = document.getElementById("startTimerBtn");
+  const stopBtn = document.getElementById("stopTimerBtn");
+  const timerInput = document.getElementById("timerInput");
+  const display = document.getElementById("timerDisplay");
+  const backBtn = document.getElementById("backBtn");
 
-  // Prime audio on first Start click
+  // Prime audio on first Start click (unlock autoplay)
   if (sound && startBtn) {
     startBtn.addEventListener("click", () => {
       sound.play().then(() => {
@@ -218,17 +229,11 @@ function initStudy() {
       }).catch(err => {
         console.log("Audio unlock failed:", err);
       });
-    }, { once: true }); // only run once
+    }, { once: true });
   }
+
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
-
-  const studySubjectEl = document.getElementById("studySubject");
-  const startBtn = document.getElementById("startTimerBtn");
-  const stopBtn = document.getElementById("stopTimerBtn");
-  const timerInput = document.getElementById("timerInput");
-  const display = document.getElementById("timerDisplay");
-  const backBtn = document.getElementById("backBtn");
 
   let timerId = null;
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
@@ -237,20 +242,18 @@ function initStudy() {
   let activeSubject = localStorage.getItem("activeSubject");
   let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
-  // Show correct subject (stick to active one if timer is running)
+  // Show correct subject
   if (activeSubject && (startTime || elapsedMs > 0)) {
     studySubjectEl.textContent = `Studying: ${activeSubject}`;
   } else {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
-  // Combined notification + sound
+  // Notification + sound
   function notifyTimerEnd(subject) {
-    const sound = document.getElementById("alarmSound");
-
     if (sound) {
       sound.currentTime = 0;
-      sound.play();
+      sound.play().catch(err => console.log("Audio play blocked:", err));
     }
 
     if (Notification.permission === "granted") {
@@ -269,12 +272,12 @@ function initStudy() {
       });
     }
 
-    // Fallback alert — clicking OK will stop alarm
+    // Fallback alert
     if (Notification.permission === "denied" || Notification.permission !== "granted") {
       alert(`⏰ Time's up! Your ${subject} session has ended.`);
       if (sound) {
         sound.pause();
-        sound.currentTime = 0; // reset
+        sound.currentTime = 0;
       }
     }
   }
@@ -351,7 +354,7 @@ function initStudy() {
     localStorage.removeItem("timerStart");
     localStorage.removeItem("timerDuration");
 
-    const elapsedMinutes = Math.floor(elapsedMs / 60000); // floor instead of round
+    const elapsedMinutes = Math.floor(elapsedMs / 60000);
     onSessionComplete(activeSubject, elapsedMinutes);
 
     if (startBtn) {
