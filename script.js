@@ -259,6 +259,7 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
+  // Alarm + notification
   function notifyTimerEnd(subj) {
     console.log("notifyTimerEnd fired for", subj);
 
@@ -268,13 +269,11 @@ function initStudy() {
       sound.play().catch(err => console.error("Alarm failed:", err));
     }
 
-    // Use Notification API if allowed
     if (Notification.permission === "granted") {
       const n = new Notification("Study Buddy", {
         body: `⏰ Your ${subj} session has ended.`,
         icon: "icon.png"
       });
-      // Stop alarm when user clicks notification
       n.onclick = () => {
         if (sound) {
           sound.pause();
@@ -284,7 +283,7 @@ function initStudy() {
         n.close();
       };
     } else {
-      // Custom non-blocking popup fallback
+      // Custom popup fallback
       const popup = document.createElement("div");
       popup.innerHTML = `
         <div style="position:fixed;top:30%;left:30%;background:#fff;padding:20px;border:2px solid #000;z-index:9999">
@@ -408,7 +407,6 @@ function initStudy() {
 
   console.log("initStudy: ready");
 }
-
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
