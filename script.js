@@ -243,6 +243,13 @@ function initStudy() {
     );
   }
 
+  // Ask for notification permission on Start (user gesture)
+  startBtn.addEventListener("click", () => {
+    if (Notification && Notification.permission !== "granted" && Notification.permission !== "denied") {
+      Notification.requestPermission().then(p => console.log("Notification permission:", p)).catch(() => {});
+    }
+  });
+
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
 
@@ -259,28 +266,55 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
+  // Non-blocking end notification
   function notifyTimerEnd(subj) {
     console.log("notifyTimerEnd fired for", subj);
+
+    // Start alarm immediately, loop until dismissed
     if (sound) {
       sound.currentTime = 0;
-      sound.play()
-        .then(() => console.log("Alarm playing"))
-        .catch(err => console.error("Alarm failed:", err));
+      sound.loop = true;
+      sound.play().then(() => console.log("Alarm playing")).catch(err => console.error("Alarm failed:", err));
     }
 
-    if (Notification.permission === "granted") {
-      new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") {
-          new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
-        }
+    // If notifications allowed, show and stop alarm on click
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification("Study Buddy", {
+        body: `⏰ Your ${subj} session has ended.`,
+        icon: "icon.png"
       });
-    }
+      n.onclick = () => {
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
+        n.close();
+      };
+    } else {
+      // Custom popup fallback (non-blocking)
+      const popup = document.createElement("div");
+      popup.innerHTML = `
+        <div style="
+          position:fixed;top:30%;left:50%;transform:translateX(-50%);
+          background:#111;color:#fff;padding:16px 20px;border:2px solid #00d4ff;border-radius:8px;
+          box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:9999;font-family:system-ui">
+          <p style="margin:0 0 12px">⏰ Time's up! Your ${subj} session has ended.</p>
+          <button id="closeAlarmBtn" style="
+            background:#00d4ff;color:#111;border:none;padding:8px 14px;border-radius:6px;cursor:pointer">
+            OK
+          </button>
+        </div>`;
+      document.body.appendChild(popup);
 
-    // Fallback alert
-    if (Notification.permission === "denied" || Notification.permission !== "granted") {
-      alert(`⏰ Time's up! Your ${subj} session has ended.`);
+      document.getElementById("closeAlarmBtn").onclick = () => {
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
+        popup.remove();
+      };
     }
   }
 
@@ -297,15 +331,18 @@ function initStudy() {
       clearInterval(timerId);
       timerId = null;
 
+      // Clear state
       localStorage.removeItem("timerStart");
       localStorage.removeItem("timerDuration");
       localStorage.removeItem("timerSetMinutes");
       localStorage.removeItem("activeSubject");
       localStorage.removeItem("elapsedMs");
 
+      // Complete and notify
       onSessionComplete(activeSubject || subject, setMinutes || (parseInt(timerInput.value) || 0));
       notifyTimerEnd(activeSubject || subject);
 
+      // Reset buttons
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -366,16 +403,15 @@ function initStudy() {
     console.log("stopTimer: stopped", { elapsedMs, elapsedMinutes });
   }
 
+  // Bind buttons
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
   if (backBtn) backBtn.onclick = () => (window.location.href = "index.html");
 
-  if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-    Notification.requestPermission().catch(() => {});
-  }
-
+  // Initial render
   updateTimerDisplay();
 
+  // Resume if already running
   if (!timerId && startTime && durationMs) {
     timerId = setInterval(updateTimerDisplay, 1000);
     startBtn.disabled = true;
@@ -385,7 +421,6 @@ function initStudy() {
 
   console.log("initStudy: ready");
 }
-
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
