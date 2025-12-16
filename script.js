@@ -206,7 +206,6 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
-
 // Prevent crashes if called
 function onSessionComplete(subject, minutes) {
   console.log(`Session complete: ${subject} — ${minutes} min`);
@@ -224,9 +223,8 @@ function initStudy() {
   const display = document.getElementById("timerDisplay");
   const backBtn = document.getElementById("backBtn");
 
-  // Guard: if key elements are missing, bail gracefully
   if (!startBtn || !stopBtn || !timerInput || !display || !studySubjectEl) {
-    console.error("initStudy: missing DOM elements", { startBtn, stopBtn, timerInput, display, studySubjectEl });
+    console.error("initStudy: missing DOM elements");
     return;
   }
 
@@ -238,17 +236,16 @@ function initStudy() {
         sound.play().then(() => {
           sound.pause();
           sound.currentTime = 0;
-        }).catch(err => console.log("Audio unlock blocked:", err));
+          console.log("Audio primed/unlocked");
+        }).catch(err => console.error("Audio unlock failed:", err));
       },
       { once: true }
     );
   }
 
-  // Subject from query
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
 
-  // State
   let timerId = null;
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
@@ -256,7 +253,6 @@ function initStudy() {
   let activeSubject = localStorage.getItem("activeSubject");
   let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
-  // Header subject
   if (activeSubject && (startTime || elapsedMs > 0)) {
     studySubjectEl.textContent = `Studying: ${activeSubject}`;
   } else {
@@ -264,9 +260,12 @@ function initStudy() {
   }
 
   function notifyTimerEnd(subj) {
+    console.log("notifyTimerEnd fired for", subj);
     if (sound) {
       sound.currentTime = 0;
-      sound.play().catch(err => console.log("Audio play blocked:", err));
+      sound.play()
+        .then(() => console.log("Alarm playing"))
+        .catch(err => console.error("Alarm failed:", err));
     }
 
     if (Notification.permission === "granted") {
@@ -279,12 +278,9 @@ function initStudy() {
       });
     }
 
+    // Fallback alert
     if (Notification.permission === "denied" || Notification.permission !== "granted") {
       alert(`⏰ Time's up! Your ${subj} session has ended.`);
-      if (sound) {
-        sound.pause();
-        sound.currentTime = 0;
-      }
     }
   }
 
@@ -297,23 +293,19 @@ function initStudy() {
     let remainingSec = Math.ceil((startTime + durationMs - now) / 1000);
 
     if (remainingSec <= 0) {
-      remainingSec = 0;
       display.textContent = "00:00";
       clearInterval(timerId);
       timerId = null;
 
-      // Clear state
       localStorage.removeItem("timerStart");
       localStorage.removeItem("timerDuration");
       localStorage.removeItem("timerSetMinutes");
       localStorage.removeItem("activeSubject");
       localStorage.removeItem("elapsedMs");
 
-      // Complete
       onSessionComplete(activeSubject || subject, setMinutes || (parseInt(timerInput.value) || 0));
       notifyTimerEnd(activeSubject || subject);
 
-      // Reset buttons
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -374,20 +366,16 @@ function initStudy() {
     console.log("stopTimer: stopped", { elapsedMs, elapsedMinutes });
   }
 
-  // Bind buttons
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
   if (backBtn) backBtn.onclick = () => (window.location.href = "index.html");
 
-  // Notification request (non-blocking)
   if (Notification.permission !== "granted" && Notification.permission !== "denied") {
     Notification.requestPermission().catch(() => {});
   }
 
-  // Initial render
   updateTimerDisplay();
 
-  // Resume if already running
   if (!timerId && startTime && durationMs) {
     timerId = setInterval(updateTimerDisplay, 1000);
     startBtn.disabled = true;
