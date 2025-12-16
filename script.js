@@ -218,12 +218,9 @@ function initStudy() {
   const display = document.getElementById("timerDisplay");
   const backBtn = document.getElementById("backBtn");
 
-  if (!startBtn || !stopBtn || !timerInput || !display || !studySubjectEl) {
-    console.error("initStudy: missing DOM elements");
-    return;
-  }
+  if (!startBtn || !stopBtn || !timerInput || !display || !studySubjectEl) return;
 
-  // Unlock audio (browser autoplay rule)
+  // Unlock audio (required by browser)
   if (sound) {
     startBtn.addEventListener(
       "click",
@@ -242,26 +239,24 @@ function initStudy() {
   studySubjectEl.textContent = `Studying: ${subject}`;
 
   let timerId = null;
-  let startTime = null;
-  let durationMs = null;
+  let startTime = parseInt(localStorage.getItem("timerStart")) || null;
+  let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
+  let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
-  /* ---------- ALARM (FIXED) ---------- */
+  /* ---------- ALARM ---------- */
   function notifyTimerEnd(subj) {
-    console.log("Timer ended for:", subj);
-
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
       sound.play().catch(() => {});
     }
 
-    // Alert AFTER sound starts (non-blocking)
     setTimeout(() => {
       alert(`⏰ Time's up! Your ${subj} session has ended.`);
       if (sound) {
         sound.pause();
-        sound.currentTime = 0;
         sound.loop = false;
+        sound.currentTime = 0;
       }
     }, 100);
   }
@@ -278,9 +273,14 @@ function initStudy() {
       timerId = null;
       display.textContent = "00:00";
 
-      onSessionComplete(subject, parseInt(timerInput.value) || 1);
+      localStorage.removeItem("timerStart");
+      localStorage.removeItem("timerDuration");
+      localStorage.removeItem("elapsedMs");
+
+      onSessionComplete(subject, Math.round(durationMs / 60000));
       notifyTimerEnd(subject);
 
+      startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
       return;
@@ -293,13 +293,23 @@ function initStudy() {
   }
 
   function startTimer() {
-    const minutes = Math.max(1, parseInt(timerInput.value) || 30);
-    durationMs = minutes * 60 * 1000;
-    startTime = Date.now();
+    const inputMinutes = Math.max(1, parseInt(timerInput.value) || 30);
 
-    updateTimer();
+    if (!durationMs) {
+      durationMs = inputMinutes * 60 * 1000;
+      elapsedMs = 0;
+    }
+
+    startTime = Date.now() - elapsedMs;
+
+    localStorage.setItem("timerStart", startTime);
+    localStorage.setItem("timerDuration", durationMs);
+    localStorage.removeItem("elapsedMs");
+
     timerId = setInterval(updateTimer, 1000);
+    updateTimer();
 
+    startBtn.textContent = elapsedMs > 0 ? "Resume" : "Start";
     startBtn.disabled = true;
     stopBtn.disabled = false;
   }
@@ -308,15 +318,28 @@ function initStudy() {
     if (timerId) clearInterval(timerId);
     timerId = null;
 
+    elapsedMs = Date.now() - startTime;
+    localStorage.setItem("elapsedMs", elapsedMs);
+
+    startBtn.textContent = "Resume";
     startBtn.disabled = false;
     stopBtn.disabled = true;
   }
 
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
-  if (backBtn) backBtn.onclick = () => (window.location.href = "index.html");
+  if (backBtn) backBtn.onclick = () => (location.href = "index.html");
 
-  display.textContent = "00:00";
+  // Resume automatically if page reloads mid-session
+  if (startTime && durationMs) {
+    timerId = setInterval(updateTimer, 1000);
+    startBtn.textContent = "Resume";
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    updateTimer();
+  } else {
+    display.textContent = "00:00";
+  }
 }
 
 /* ---------------- ROUTINE PAGE ---------------- */
