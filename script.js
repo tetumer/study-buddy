@@ -419,7 +419,7 @@ function initStudy() {
 
   console.log("initStudy: ready");
 }
-
+ 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
   const form = document.getElementById("routineForm");
