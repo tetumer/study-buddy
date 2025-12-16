@@ -228,67 +228,7 @@ function initStudy() {
     return;
   }
 
-  // --- Web Audio setup ---
-  let audioCtx = null;
-  let alarmOsc = null;
-  let alarmGain = null;
-
-  function ensureAudioContext() {
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    // Some browsers require resume after gesture
-    if (audioCtx.state === "suspended") {
-      return audioCtx.resume();
-    }
-    return Promise.resolve();
-  }
-
-  function startWebAudioAlarm() {
-    try {
-      // Create oscillator + gain
-      alarmOsc = audioCtx.createOscillator();
-      alarmGain = audioCtx.createGain();
-
-      // Tone: 880 Hz (A5), not too harsh
-      alarmOsc.frequency.setValueAtTime(880, audioCtx.currentTime);
-
-      // Envelope: fade in slightly to avoid click
-      alarmGain.gain.setValueAtTime(0, audioCtx.currentTime);
-      alarmGain.gain.linearRampToValueAtTime(0.25, audioCtx.currentTime + 0.05);
-
-      alarmOsc.connect(alarmGain);
-      alarmGain.connect(audioCtx.destination);
-      alarmOsc.start();
-
-      console.log("WebAudio alarm started");
-    } catch (e) {
-      console.error("WebAudio alarm error:", e);
-    }
-  }
-
-  function stopWebAudioAlarm() {
-    try {
-      if (alarmGain) {
-        // Fade out to avoid click
-        alarmGain.gain.cancelScheduledValues(audioCtx.currentTime);
-        alarmGain.gain.setValueAtTime(alarmGain.gain.value, audioCtx.currentTime);
-        alarmGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.05);
-      }
-      if (alarmOsc) {
-        // Stop slightly after fade
-        const stopAt = audioCtx.currentTime + 0.06;
-        alarmOsc.stop(stopAt);
-      }
-      alarmOsc = null;
-      alarmGain = null;
-      console.log("WebAudio alarm stopped");
-    } catch (e) {
-      console.error("WebAudio stop error:", e);
-    }
-  }
-
-  // Prime media element on first Start (optional, keeps your original audio as backup)
+  // Prime audio on first Start click (unlock autoplay)
   if (sound) {
     startBtn.addEventListener(
       "click",
@@ -296,21 +236,20 @@ function initStudy() {
         sound.play().then(() => {
           sound.pause();
           sound.currentTime = 0;
-          console.log("HTMLAudio primed");
-        }).catch(err => console.warn("HTMLAudio prime failed:", err));
+          console.log("Audio primed/unlocked");
+        }).catch(err => console.error("Audio unlock failed:", err));
       },
       { once: true }
     );
   }
 
-  // Ask for notification permission on Start (user gesture) and unlock WebAudio
+  // Ask for notification permission on Start (user gesture)
   startBtn.addEventListener("click", () => {
     if (typeof Notification !== "undefined" &&
         Notification.permission !== "granted" &&
         Notification.permission !== "denied") {
       Notification.requestPermission().then(p => console.log("Notification permission:", p)).catch(() => {});
     }
-    ensureAudioContext().then(() => console.log("AudioContext ready")).catch(err => console.error("AudioContext unlock failed:", err));
   });
 
   const params = new URLSearchParams(window.location.search);
@@ -329,41 +268,49 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
-  // End-of-timer notification using non-blocking UI
+  // End-of-timer notification
   function notifyTimerEnd(subj) {
     console.log("notifyTimerEnd fired for", subj);
 
-    // Start alarm immediately via Web Audio (unaffected by alert)
-    ensureAudioContext().then(() => startWebAudioAlarm());
+    // Start alarm immediately, loop until dismissed
+    if (sound) {
+      sound.currentTime = 0;
+      sound.loop = true;
+      sound.play().then(() => console.log("Alarm playing")).catch(err => console.error("Alarm failed:", err));
+    }
 
-    // If notifications allowed, show system notification and stop alarm on click
+    // If notifications allowed, show system notification
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       const n = new Notification("Study Buddy", {
         body: `⏰ Your ${subj} session has ended.`,
         icon: "icon.png"
       });
       n.onclick = () => {
-        stopWebAudioAlarm();
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
         n.close();
       };
     } else {
-      // Custom non-blocking popup fallback
+      // Custom popup fallback
       const popup = document.createElement("div");
       popup.innerHTML = `
         <div style="
           position:fixed;top:30%;left:50%;transform:translateX(-50%);
-          background:#111;color:#fff;padding:16px 20px;border:2px solid #00d4ff;border-radius:8px;
-          box-shadow:0 8px 24px rgba(0,0,0,0.3);z-index:9999;font-family:system-ui">
-          <p style="margin:0 0 12px">⏰ Time's up! Your ${subj} session has ended.</p>
-          <button id="closeAlarmBtn" style="
-            background:#00d4ff;color:#111;border:none;padding:8px 14px;border-radius:6px;cursor:pointer">
-            OK
-          </button>
+          background:#fff;padding:20px;border:2px solid #000;z-index:9999">
+          <p>⏰ Time's up! Your ${subj} session has ended.</p>
+          <button id="closeAlarmBtn">OK</button>
         </div>`;
       document.body.appendChild(popup);
 
       document.getElementById("closeAlarmBtn").onclick = () => {
-        stopWebAudioAlarm();
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
         popup.remove();
       };
     }
