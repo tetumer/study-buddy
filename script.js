@@ -259,56 +259,48 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
-function notifyTimerEnd(subj) {
-  console.log("notifyTimerEnd fired for", subj);
+  function notifyTimerEnd(subj) {
+    console.log("notifyTimerEnd fired for", subj);
 
-  if (sound) {
-    sound.currentTime = 0;
-    sound.loop = true; // keep ringing until dismissed
-    sound.play().catch(err => console.error("Alarm failed:", err));
-  }
+    if (sound) {
+      sound.currentTime = 0;
+      sound.loop = true; // keep ringing until dismissed
+      sound.play().catch(err => console.error("Alarm failed:", err));
+    }
 
-  // Use Notification API if allowed
-  if (Notification.permission === "granted") {
-    const n = new Notification("Study Buddy", {
-      body: `⏰ Your ${subj} session has ended.`,
-      icon: "icon.png"
-    });
-    // Stop alarm when user clicks notification
-    n.onclick = () => {
-      if (sound) {
-        sound.pause();
-        sound.currentTime = 0;
-        sound.loop = false;
-      }
-      n.close();
-    };
-  } else {
-    // Custom non-blocking popup fallback
-    const popup = document.createElement("div");
-    popup.innerHTML = `
-      <div style="position:fixed;top:30%;left:30%;background:#fff;padding:20px;border:2px solid #000;z-index:9999">
-        <p>⏰ Time's up! Your ${subj} session has ended.</p>
-        <button id="closeAlarmBtn">OK</button>
-      </div>`;
-    document.body.appendChild(popup);
+    // Use Notification API if allowed
+    if (Notification.permission === "granted") {
+      const n = new Notification("Study Buddy", {
+        body: `⏰ Your ${subj} session has ended.`,
+        icon: "icon.png"
+      });
+      // Stop alarm when user clicks notification
+      n.onclick = () => {
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
+        n.close();
+      };
+    } else {
+      // Custom non-blocking popup fallback
+      const popup = document.createElement("div");
+      popup.innerHTML = `
+        <div style="position:fixed;top:30%;left:30%;background:#fff;padding:20px;border:2px solid #000;z-index:9999">
+          <p>⏰ Time's up! Your ${subj} session has ended.</p>
+          <button id="closeAlarmBtn">OK</button>
+        </div>`;
+      document.body.appendChild(popup);
 
-    document.getElementById("closeAlarmBtn").onclick = () => {
-      if (sound) {
-        sound.pause();
-        sound.currentTime = 0;
-        sound.loop = false;
-      }
-      popup.remove();
-    };
-  }
-}
-
-
-
-    // Fallback alert
-    if (Notification.permission === "denied" || Notification.permission !== "granted") {
-      alert(`⏰ Time's up! Your ${subj} session has ended.`);
+      document.getElementById("closeAlarmBtn").onclick = () => {
+        if (sound) {
+          sound.pause();
+          sound.currentTime = 0;
+          sound.loop = false;
+        }
+        popup.remove();
+      };
     }
   }
 
@@ -398,9 +390,12 @@ function notifyTimerEnd(subj) {
   stopBtn.onclick = stopTimer;
   if (backBtn) backBtn.onclick = () => (window.location.href = "index.html");
 
-  if (Notification.permission !== "granted" && Notification.permission !== "denied") {
-    Notification.requestPermission().catch(() => {});
-  }
+  // Ask for notification permission on user action
+  startBtn.addEventListener("click", () => {
+    if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+      Notification.requestPermission().then(p => console.log("Notification permission:", p));
+    }
+  });
 
   updateTimerDisplay();
 
