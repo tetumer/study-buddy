@@ -259,24 +259,27 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
-  function notifyTimerEnd(subj) {
-    console.log("notifyTimerEnd fired for", subj);
-    if (sound) {
-      sound.currentTime = 0;
-      sound.play()
-        .then(() => console.log("Alarm playing"))
-        .catch(err => console.error("Alarm failed:", err));
-    }
+ function notifyTimerEnd(subj) {
+  console.log("notifyTimerEnd fired for", subj);
+  if (sound) {
+    sound.currentTime = 0;
+    sound.loop = true; // keep ringing until stopped
+    sound.play()
+      .then(() => console.log("Alarm playing"))
+      .catch(err => console.error("Alarm failed:", err));
+  }
 
-    if (Notification.permission === "granted") {
-      new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
-    } else if (Notification.permission !== "denied") {
-      Notification.requestPermission().then(permission => {
-        if (permission === "granted") {
-          new Notification("Study Buddy", { body: `⏰ Your ${subj} session has ended.`, icon: "icon.png" });
-        }
-      });
-    }
+  // Show alert AFTER sound starts
+  alert(`⏰ Time's up! Your ${subj} session has ended.`);
+
+  // Stop alarm once user dismisses alert
+  if (sound) {
+    sound.pause();
+    sound.currentTime = 0;
+    sound.loop = false;
+  }
+}
+
 
     // Fallback alert
     if (Notification.permission === "denied" || Notification.permission !== "granted") {
