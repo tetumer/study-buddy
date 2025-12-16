@@ -259,26 +259,51 @@ function initStudy() {
     studySubjectEl.textContent = `Studying: ${subject}`;
   }
 
- function notifyTimerEnd(subj) {
+function notifyTimerEnd(subj) {
   console.log("notifyTimerEnd fired for", subj);
+
   if (sound) {
     sound.currentTime = 0;
-    sound.loop = true; // keep ringing until stopped
-    sound.play()
-      .then(() => console.log("Alarm playing"))
-      .catch(err => console.error("Alarm failed:", err));
+    sound.loop = true; // keep ringing until dismissed
+    sound.play().catch(err => console.error("Alarm failed:", err));
   }
 
-  // Show alert AFTER sound starts
-  alert(`⏰ Time's up! Your ${subj} session has ended.`);
+  // Use Notification API if allowed
+  if (Notification.permission === "granted") {
+    const n = new Notification("Study Buddy", {
+      body: `⏰ Your ${subj} session has ended.`,
+      icon: "icon.png"
+    });
+    // Stop alarm when user clicks notification
+    n.onclick = () => {
+      if (sound) {
+        sound.pause();
+        sound.currentTime = 0;
+        sound.loop = false;
+      }
+      n.close();
+    };
+  } else {
+    // Custom non-blocking popup fallback
+    const popup = document.createElement("div");
+    popup.innerHTML = `
+      <div style="position:fixed;top:30%;left:30%;background:#fff;padding:20px;border:2px solid #000;z-index:9999">
+        <p>⏰ Time's up! Your ${subj} session has ended.</p>
+        <button id="closeAlarmBtn">OK</button>
+      </div>`;
+    document.body.appendChild(popup);
 
-  // Stop alarm once user dismisses alert
-  if (sound) {
-    sound.pause();
-    sound.currentTime = 0;
-    sound.loop = false;
+    document.getElementById("closeAlarmBtn").onclick = () => {
+      if (sound) {
+        sound.pause();
+        sound.currentTime = 0;
+        sound.loop = false;
+      }
+      popup.remove();
+    };
   }
 }
+
 
 
     // Fallback alert
