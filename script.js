@@ -206,8 +206,20 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
-
 function initStudy() {
+  const sound = document.getElementById("alarmSound");
+
+  // Prime audio on first Start click
+  if (sound && startBtn) {
+    startBtn.addEventListener("click", () => {
+      sound.play().then(() => {
+        sound.pause();
+        sound.currentTime = 0;
+      }).catch(err => {
+        console.log("Audio unlock failed:", err);
+      });
+    }, { once: true }); // only run once
+  }
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
 
