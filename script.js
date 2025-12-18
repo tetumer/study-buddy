@@ -206,6 +206,11 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
+// Prevent crashes if called
+function onSessionComplete(subject, minutes) {
+  console.log(`Session complete: ${subject} — ${minutes} min`);
+}
+
 function initStudy() {
   console.log("initStudy: starting");
 
@@ -223,62 +228,21 @@ function initStudy() {
     return;
   }
 
-  // Prime audio on first Start click (unlock autoplay)
-  if (sound) {
-    startBtn.addEventListener(
-      "click",
-      () => {
-        sound.play().then(() => {
-          sound.pause();
-          sound.currentTime = 0;
-          console.log("Audio primed/unlocked");
-        }).catch(err => console.warn("Audio unlock failed (will fallback on alarm):", err));
-      },
-      { once: true }
-    );
-  }
-
-  // Smart permission request on Start
-  startBtn.addEventListener("click", () => {
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().then(p => console.log("Notification permission:", p)).catch(() => {});
-    }
-  }, { once: true });
-
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
 
-  // SAFETY: make sure required session vars exist (same names, no renaming)
-  // Only define if missing; otherwise use your existing globals.
-  if (typeof timerId === "undefined") window.timerId = null;
-  if (typeof startTime === "undefined") window.startTime = parseInt(localStorage.getItem("timerStart")) || null;
-  if (typeof durationMs === "undefined") window.durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
-  if (typeof setMinutes === "undefined") window.setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
-  if (typeof activeSubject === "undefined") window.activeSubject = localStorage.getItem("activeSubject") || null;
-  if (typeof elapsedMs === "undefined") window.elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
+  studySubjectEl.textContent = `Studying: ${activeSubject || subject}`;
 
-  // Single notification handle (internal to study page)
-  let activeNotification = null;
-
-  // Subject render
-  if (activeSubject && (startTime || elapsedMs > 0)) {
-    studySubjectEl.textContent = `Studying: ${activeSubject}`;
-  } else {
-    studySubjectEl.textContent = `Studying: ${subject}`;
-  }
-
-  // Alarm at end
-  function notifyTimerEnd(subj) {
-    console.log("notifyTimerEnd fired for", subj);
-
-    if (activeNotification) { try { activeNotification.close(); } catch {} activeNotification = null; }
+  // ===== Alarm =====
+  function triggerAlarm(subj) {
+    console.log("triggerAlarm fired for", subj);
 
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
-      sound.play().then(() => console.log("Alarm playing")).catch(err => {
-        console.error("Alarm failed:", err);
-        if (navigator.vibrate) navigator.vibrate([300, 200, 300, 200, 600]);
+      sound.play().catch(err => {
+        console.error("Alarm audio failed:", err);
+        if (navigator.vibrate) navigator.vibrate([300,200,300,200,600]);
       });
     }
 
@@ -290,10 +254,8 @@ function initStudy() {
       });
       n.onclick = () => {
         if (sound) {
-          sound.pause();
-          sound.currentTime = 0;
+          sound.pause(); sound.currentTime = 0; sound.loop = false;
         }
-        sound && (sound.loop = false);
         n.close();
       };
     } else {
@@ -307,61 +269,50 @@ function initStudy() {
       document.body.appendChild(popup);
       document.getElementById("closeAlarmBtn").onclick = () => {
         if (sound) {
-          sound.pause();
-          sound.currentTime = 0;
-          sound.loop = false;
+          sound.pause(); sound.currentTime = 0; sound.loop = false;
         }
         popup.remove();
       };
     }
   }
 
-  // Create or replace a single notification (no spam), using tag
-  function ensureOrUpdateNotification(remainingSec, subj) {
+  // ===== Notification helpers =====
+  function createTimerNotification(subj, totalMinutes) {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-
-    const m = Math.floor(Math.max(0, remainingSec) / 60);
-    const s = Math.max(0, remainingSec) % 60;
-    const body = remainingSec > 0
-      ? `⏳ ${subj} — ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} left`
-      : `⏳ ${subj} — finishing...`;
-
-    // Use 'tag' to replace instead of stacking
-    try {
-      if (activeNotification) {
-        // Close old to force instant replace on some browsers
-        activeNotification.close();
-        activeNotification = null;
-      }
-      activeNotification = new Notification("Study Buddy Timer", {
-        body,
-        icon: "icon.png",
-        tag: "study-timer",          // ensures single tile
-        renotify: true,              // update buzz if applicable
-        silent: true,                // don't make a sound on each update
-        requireInteraction: true
-      });
-    } catch (e) {
-      // If creation fails, ignore; alarm will still handle end
-    }
+    new Notification("Study Buddy Timer", {
+      body: `⏳ ${subj} — ${totalMinutes} min session started`,
+      icon: "icon.png",
+      tag: "study-timer",
+      renotify: true,
+      requireInteraction: true
+    });
   }
 
+  function updateTimerNotification(subj, remainingMin) {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    new Notification("Study Buddy Timer", {
+      body: `⏳ ${subj} — ${remainingMin} min left`,
+      icon: "icon.png",
+      tag: "study-timer",
+      renotify: true,
+      silent: true,
+      requireInteraction: true
+    });
+  }
+
+  // ===== Timer display =====
   function updateTimerDisplay() {
     if (!startTime || !durationMs) {
       display.textContent = "00:00";
       return;
     }
-
     const now = Date.now();
     const remainingSec = Math.ceil((startTime + durationMs - now) / 1000);
 
     if (remainingSec <= 0) {
       display.textContent = "00:00";
+      clearInterval(timerId); timerId = null;
 
-      if (timerId) clearInterval(timerId);
-      timerId = null;
-
-      // Only clear study keys; do NOT clear all localStorage
       localStorage.removeItem("timerStart");
       localStorage.removeItem("timerDuration");
       localStorage.removeItem("timerSetMinutes");
@@ -369,29 +320,27 @@ function initStudy() {
       localStorage.removeItem("elapsedMs");
 
       onSessionComplete(activeSubject || subject, setMinutes);
-      notifyTimerEnd(activeSubject || subject);
+      triggerAlarm(activeSubject || subject);
 
-      // Reset UI
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
       timerInput.disabled = false;
-
-      // Close live notification
-      if (activeNotification) { try { activeNotification.close(); } catch {} activeNotification = null; }
       return;
     }
 
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
-    display.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
 
-    // Keep one notification updated (replace behavior)
-    ensureOrUpdateNotification(remainingSec, activeSubject || subject);
+    // Update notification only once per minute
+    if (s === 0 && Notification.permission === "granted") {
+      updateTimerNotification(activeSubject || subject, m);
+    }
   }
 
+  // ===== Start =====
   function startTimer() {
-    // Lock the chosen minutes once started
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
     timerInput.disabled = true;
 
@@ -405,21 +354,21 @@ function initStudy() {
     localStorage.setItem("activeSubject", activeSubject);
     localStorage.removeItem("elapsedMs");
 
-    // Permission only if default (done earlier on first start click)
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      ensureOrUpdateNotification(setMinutes * 60, activeSubject || subject);
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+    if (Notification.permission === "granted") {
+      createTimerNotification(activeSubject || subject, setMinutes);
     }
 
     updateTimerDisplay();
-
-    startBtn.textContent = "Start";
     startBtn.disabled = true;
     stopBtn.disabled = false;
-
     timerId = setInterval(updateTimerDisplay, 1000);
     console.log("startTimer: started", { setMinutes, durationMs });
   }
 
+  // ===== Stop/Pause =====
   function stopTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
@@ -439,11 +388,8 @@ function initStudy() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
 
-    // Close live notification when paused
-    if (activeNotification) { try { activeNotification.close(); } catch {} activeNotification = null; }
-
     updateTimerDisplay();
-    console.log("stopTimer: stopped", { elapsedMs, elapsedMinutes });
+    console.log("stopTimer: paused", { elapsedMs, elapsedMinutes });
   }
 
   // Bind buttons
@@ -459,7 +405,7 @@ function initStudy() {
     timerId = setInterval(updateTimerDisplay, 1000);
     startBtn.disabled = true;
     stopBtn.disabled = false;
-    timerInput.disabled = true; // lock during resume
+    timerInput.disabled = true;
     console.log("initStudy: resuming existing timer");
   }
 
