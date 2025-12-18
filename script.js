@@ -207,10 +207,6 @@ function scheduleDashboardReminderUpdates() {
 
 /* ---------------- STUDY PAGE ---------------- */
 // Prevent crashes if called
-function onSessionComplete(subject, minutes) {
-  console.log(`Session complete: ${subject} — ${minutes} min`);
-}
-
 function initStudy() {
   console.log("initStudy: starting");
 
