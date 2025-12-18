@@ -276,30 +276,6 @@ function initStudy() {
     }
   }
 
-  // ===== Notification helpers =====
-  function createTimerNotification(subj, totalMinutes) {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("Study Buddy Timer", {
-      body: `⏳ ${subj} — ${totalMinutes} min session started`,
-      icon: "icon.png",
-      tag: "study-timer",
-      renotify: true,
-      requireInteraction: true
-    });
-  }
-
-  function updateTimerNotification(subj, remainingMin) {
-    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("Study Buddy Timer", {
-      body: `⏳ ${subj} — ${remainingMin} min left`,
-      icon: "icon.png",
-      tag: "study-timer",
-      renotify: true,
-      silent: true,
-      requireInteraction: true
-    });
-  }
-
   // ===== Timer display =====
   function updateTimerDisplay() {
     if (!startTime || !durationMs) {
@@ -332,11 +308,6 @@ function initStudy() {
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-
-    // Update notification only once per minute
-    if (s === 0 && Notification.permission === "granted") {
-      updateTimerNotification(activeSubject || subject, m);
-    }
   }
 
   // ===== Start =====
@@ -354,11 +325,25 @@ function initStudy() {
     localStorage.setItem("activeSubject", activeSubject);
     localStorage.removeItem("elapsedMs");
 
+    // Ask permission smartly
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
-    if (Notification.permission === "granted") {
-      createTimerNotification(activeSubject || subject, setMinutes);
+
+    // Scheduled notification (Android Chrome/Edge)
+    if (typeof Notification !== "undefined" &&
+        Notification.permission === "granted" &&
+        "showTrigger" in Notification.prototype) {
+      try {
+        new Notification("Study Buddy", {
+          body: `⏳ ${activeSubject || subject} session ending in ${setMinutes} min`,
+          icon: "icon.png",
+          showTrigger: new TimestampTrigger(Date.now() + durationMs),
+          requireInteraction: true
+        });
+      } catch (err) {
+        console.warn("Scheduled notification failed:", err);
+      }
     }
 
     updateTimerDisplay();
