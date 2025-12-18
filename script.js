@@ -262,6 +262,9 @@ function initStudy() {
   let activeSubject = localStorage.getItem("activeSubject");
   let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
 
+  // Keep reference to active notification
+  let activeNotification = null;
+
   if (activeSubject && (startTime || elapsedMs > 0)) {
     studySubjectEl.textContent = `Studying: ${activeSubject}`;
   } else {
@@ -271,6 +274,12 @@ function initStudy() {
   // End-of-timer notification
   function notifyTimerEnd(subj) {
     console.log("notifyTimerEnd fired for", subj);
+
+    // Stop updating notification
+    if (activeNotification) {
+      activeNotification.close();
+      activeNotification = null;
+    }
 
     // Start alarm immediately, loop until dismissed
     if (sound) {
@@ -283,7 +292,8 @@ function initStudy() {
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       const n = new Notification("Study Buddy", {
         body: `⏰ Your ${subj} session has ended.`,
-        icon: "icon.png"
+        icon: "icon.png",
+        requireInteraction: true
       });
       n.onclick = () => {
         if (sound) {
@@ -314,6 +324,25 @@ function initStudy() {
         popup.remove();
       };
     }
+  }
+
+  // Update notification with remaining time
+  function updateNotification(remainingSec, subj) {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+
+    const m = Math.floor(remainingSec / 60);
+    const s = remainingSec % 60;
+    const body = `⏳ ${subj} — ${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")} remaining`;
+
+    // Close old notification
+    if (activeNotification) activeNotification.close();
+
+    // Create new one
+    activeNotification = new Notification("Study Buddy Timer", {
+      body,
+      icon: "icon.png",
+      requireInteraction: true
+    });
   }
 
   function updateTimerDisplay() {
@@ -350,6 +379,9 @@ function initStudy() {
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     display.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+    // Update notification every tick
+    updateNotification(remainingSec, activeSubject || subject);
   }
 
   function startTimer() {
@@ -397,6 +429,12 @@ function initStudy() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
 
+    // Close notification if running
+    if (activeNotification) {
+      activeNotification.close();
+      activeNotification = null;
+    }
+
     updateTimerDisplay();
     console.log("stopTimer: stopped", { elapsedMs, elapsedMinutes });
   }
@@ -417,9 +455,7 @@ function initStudy() {
     console.log("initStudy: resuming existing timer");
   }
 
-  console.log("initStudy: ready");
-}
- 
+
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
   const form = document.getElementById("routineForm");
