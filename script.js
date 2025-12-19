@@ -229,9 +229,15 @@ const readState = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"statu
 const writeState = (s) => localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 const clearState = () => localStorage.removeItem(STORAGE_KEY);
 
-function addToHistory(entry) {
+function addToHistory(subject, minutes, startedAt, source="finished") {
   const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-  history.push(entry);
+  history.push({
+    subject,
+    minutes,
+    startedAt: startedAt || new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    source
+  });
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
@@ -244,14 +250,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const backBtn = document.getElementById("backBtn");
   const studySubjectEl = document.getElementById("studySubject");
 
-  // Back navigates via history (don’t hardcode paths)
   if (backBtn) backBtn.onclick = () => history.back();
 
-  // Lock display against edits
   display.contentEditable = false;
   display.style.pointerEvents = "none";
 
-  // Unlock audio on user interaction (so alarm can play immediately later)
+  // Unlock audio on first interaction
   let audioUnlocked = false;
   function unlockAudio() {
     if (audioUnlocked || !sound) return;
@@ -269,22 +273,20 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("touchstart", unlockAudio, { once: true });
   document.addEventListener("click", unlockAudio, { once: true });
 
-  // UI state machine per your rules:
-  // Start -> Reset, Stop -> Resume, Resume -> Stop, Reset -> Start
   function setUI(status) {
     if (status === "running") {
-      startBtn.textContent = "Reset";   // running → Reset
+      startBtn.textContent = "Reset";
       startBtn.disabled = false;
       stopBtn.textContent = "Stop";
       stopBtn.disabled = false;
       timerInput.disabled = true;
     } else if (status === "paused") {
-      startBtn.textContent = "Reset";   // paused → Reset
+      startBtn.textContent = "Reset";
       startBtn.disabled = false;
-      stopBtn.textContent = "Resume";   // Stop → Resume
+      stopBtn.textContent = "Resume";
       stopBtn.disabled = false;
       timerInput.disabled = true;
-    } else { // idle
+    } else {
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.textContent = "Stop";
@@ -303,15 +305,12 @@ document.addEventListener("DOMContentLoaded", () => {
     if (popup) popup.remove();
   }
 
-  function triggerAlarm(subject, startedAt, plannedMinutes) {
-    // Play sound immediately
+  function triggerAlarm(subject, startedAtISO, plannedMinutes) {
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
       sound.play().catch(() => {});
     }
-
-    // Popup with Stop Alarm
     const existing = document.getElementById("alarmPopup");
     if (existing) existing.remove();
     const popup = document.createElement("div");
@@ -325,14 +324,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(popup);
     document.getElementById("closeAlarmBtn").onclick = stopAlarm;
 
-    // Log to history for dashboard (index.html)
-    addToHistory({
-      subject,
-      minutes: plannedMinutes,             // planned (target) minutes
-      finishedAt: new Date().toISOString(),
-      startedAt: startedAt || new Date().toISOString(),
-      source: "timer-finished"
-    });
+    addToHistory(subject, plannedMinutes, startedAtISO, "finished");
   }
 
   function render() {
@@ -346,7 +338,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const remainingSec = Math.ceil(remainingMs / 1000);
 
       if (remainingSec <= 0) {
-        // Session finished
         worker.postMessage({ type: "STOP" });
         const plannedMinutes = state.plannedMinutes || Math.round((state.endTime - (state.startedAt || now)) / 60000);
         const startedAtISO = state.startedAt ? new Date(state.startedAt).toISOString() : new Date().toISOString();
@@ -373,63 +364,36 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Start/Reset button
   function startOrReset() {
-    unlockAudio(); // ensure audio ready
-
+    unlockAudio();
     const current = readState();
     let subject = current.subject;
-
-    // Subject lock: only set when idle
     if (!subject || current.status === "idle") {
       const params = new URLSearchParams(window.location.search);
       subject = params.get("subject") || "Personal Project";
     }
 
     if (current.status === "running" || current.status === "paused") {
-      // Reset: record aborted session (optional)
-      if (current.status === "paused" && current.remainingMs) {
-        const elapsedMinutes = current.plannedMinutes
-          ? current.plannedMinutes - Math.round(current.remainingMs / 60000)
-          : undefined;
-        addToHistory({
-          subject: current.subject || subject,
-          minutes: elapsedMinutes || 0,
-          finishedAt: new Date().toISOString(),
-          startedAt: current.startedAt || new Date().toISOString(),
-          source: "reset"
-        });
-      } else if (current.status === "running") {
-        const remainingMs = Math.max(0, current.endTime - Date.now());
-        const elapsedMinutes = current.plannedMinutes
-          ? current.plannedMinutes - Math.round(remainingMs / 60000)
-          : undefined;
-        addToHistory({
-          subject: current.subject || subject,
-          minutes: elapsedMinutes || 0,
-          finishedAt: new Date().toISOString(),
-          startedAt: current.startedAt || new Date().toISOString(),
-          source: "reset"
-        });
+      // Reset: log aborted session
+      if (current.startedAt && current.plannedMinutes) {
+        const elapsedMinutes = current.plannedMinutes - Math.round((current.remainingMs || (current.endTime - Date.now())) / 60000);
+        addToHistory(subject, elapsedMinutes, new Date(current.startedAt).toISOString(), "reset");
       }
-
-      // Clear and stop
       clearState();
       worker.postMessage({ type: "STOP" });
       stopAlarm();
-      render(); // goes to idle
+      render();
       return;
     }
 
-    // Start from idle
     const minutes = Math.max(1, parseInt(timerInput.value) || 30);
     const startedAt = Date.now();
     const state = {
       status: "running",
       subject,
       endTime: startedAt + minutes * 60 * 1000,
-      startedAt,                 // number (ms)
-      plannedMinutes: minutes    // for history and dashboard
+      startedAt,
+      plannedMinutes: minutes
     };
     writeState(state);
     setUI("running");
@@ -437,11 +401,9 @@ document.addEventListener("DOMContentLoaded", () => {
     worker.postMessage({ type: "START" });
   }
 
-  // Stop/Resume button
   function stopOrResume() {
     const current = readState();
     if (current.status === "running") {
-      // Stop → pause
       const remainingMs = Math.max(0, current.endTime - Date.now());
       const pausedState = {
         status: "paused",
@@ -454,7 +416,6 @@ document.addEventListener("DOMContentLoaded", () => {
       worker.postMessage({ type: "STOP" });
       render();
     } else if (current.status === "paused") {
-      // Resume → running
       const resumedState = {
         status: "running",
         subject: current.subject,
@@ -468,17 +429,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Bind
   startBtn.onclick = startOrReset;
   stopBtn.onclick = stopOrResume;
 
-  // Worker tick
   worker.onmessage = (e) => {
     if (e.data && e.data.type === "TICK") render();
   };
 
-  // Initial render
-  const init = readState();
+   const init = readState();
   if (init.status === "running") {
     setUI("running");
     worker.postMessage({ type: "START" });
