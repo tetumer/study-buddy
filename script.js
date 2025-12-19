@@ -330,7 +330,7 @@ function initStudy() {
       Notification.requestPermission().catch(() => {});
     }
 
-    // Scheduled notification (Android Chrome/Edge)
+    // Scheduled notification (Android Chrome/Edge only)
     if (typeof Notification !== "undefined" &&
         Notification.permission === "granted" &&
         "showTrigger" in Notification.prototype) {
@@ -341,6 +341,7 @@ function initStudy() {
           showTrigger: new TimestampTrigger(Date.now() + durationMs),
           requireInteraction: true
         });
+        console.log("Scheduled notification set for", setMinutes, "minutes");
       } catch (err) {
         console.warn("Scheduled notification failed:", err);
       }
