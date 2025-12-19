@@ -206,7 +206,7 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
-// Simple worker code as a blob (1s tick)
+// Worker (1s tick) for smooth updates
 const workerCode = `
 let interval = null;
 self.onmessage = e => {
@@ -236,22 +236,46 @@ document.addEventListener("DOMContentLoaded", () => {
   const backBtn = document.getElementById("backBtn");
   const studySubjectEl = document.getElementById("studySubject");
 
-  backBtn.onclick = () => history.back();
+  // Back navigates via history
+  if (backBtn) backBtn.onclick = () => history.back();
 
+  // Lock display against edits
   display.contentEditable = false;
   display.style.pointerEvents = "none";
 
+  // Audio unlock to avoid “plays only after OK”
+  let audioUnlocked = false;
+  function unlockAudio() {
+    if (audioUnlocked || !sound) return;
+    try {
+      const prevVol = sound.volume;
+      sound.volume = 0;
+      sound.play().then(() => {
+        sound.pause();
+        sound.currentTime = 0;
+        sound.volume = prevVol;
+        audioUnlocked = true;
+      }).catch(() => {
+        // If play fails, we’ll try again on next interaction
+      });
+    } catch (_) {}
+  }
+  // Try unlocking on any user interaction
+  document.addEventListener("touchstart", unlockAudio, { once: true });
+  document.addEventListener("click", unlockAudio, { once: true });
+
+  // UI state machine
   function setUI(status) {
     if (status === "running") {
-      startBtn.textContent = "Reset"; // running → reset
+      startBtn.textContent = "Reset";   // Start → Reset
       startBtn.disabled = false;
       stopBtn.textContent = "Stop";
       stopBtn.disabled = false;
       timerInput.disabled = true;
     } else if (status === "paused") {
-      startBtn.textContent = "Reset"; // paused → reset
+      startBtn.textContent = "Reset";   // paused → Reset
       startBtn.disabled = false;
-      stopBtn.textContent = "Resume"; // stop flips to resume
+      stopBtn.textContent = "Resume";   // Stop → Resume
       stopBtn.disabled = false;
       timerInput.disabled = true;
     } else { // idle
@@ -263,6 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // Alarm popup + sound
   function stopAlarm() {
     if (sound) {
       sound.pause();
@@ -274,16 +299,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function triggerAlarm(subject) {
+    // Start sound immediately (thanks to unlock)
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
       sound.play().catch(() => {});
     }
+
+    // Custom popup with Stop Alarm button
+    const existing = document.getElementById("alarmPopup");
+    if (existing) existing.remove();
     const popup = document.createElement("div");
     popup.id = "alarmPopup";
     popup.innerHTML = `
       <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
-      background:#fff;padding:16px 20px;border:2px solid #000;border-radius:8px;z-index:9999">
+      background:#fff;padding:16px 20px;border:2px solid #000;border-radius:8px;z-index:9999;max-width:320px">
         <p style="margin:0 0 12px">⏰ Time's up! Your ${subject} session has ended.</p>
         <button id="closeAlarmBtn" style="padding:8px 12px;border:1px solid #000;background:#f5f5f5">Stop Alarm</button>
       </div>`;
@@ -291,6 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("closeAlarmBtn").onclick = stopAlarm;
   }
 
+  // Render logic
   function render() {
     const state = readState();
     const subject = state.subject || "Personal Project";
@@ -326,24 +357,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function startTimer() {
+  // Start/Reset and Stop/Resume handlers
+  function startOrReset() {
+    unlockAudio(); // ensure audio is ready
+
     const current = readState();
     let subject = current.subject;
+
+    // Subject lock: only set when idle
     if (!subject || current.status === "idle") {
       const params = new URLSearchParams(window.location.search);
       subject = params.get("subject") || "Personal Project";
     }
 
-    // Reset if already running/paused
     if (current.status === "running" || current.status === "paused") {
+      // Reset → return to idle
       clearState();
       worker.postMessage({ type: "STOP" });
       stopAlarm();
-      setUI("idle");
-      display.textContent = "00:00";
+      render();
       return;
     }
 
+    // Start from idle
     const minutes = Math.max(1, parseInt(timerInput.value) || 30);
     const state = {
       status: "running",
@@ -356,15 +392,16 @@ document.addEventListener("DOMContentLoaded", () => {
     worker.postMessage({ type: "START" });
   }
 
-  function stopTimer() {
+  function stopOrResume() {
     const current = readState();
     if (current.status === "running") {
+      // Stop → pause
       const remainingMs = Math.max(0, current.endTime - Date.now());
       writeState({ status: "paused", subject: current.subject, remainingMs });
       worker.postMessage({ type: "STOP" });
       render();
     } else if (current.status === "paused") {
-      // Resume
+      // Resume → running
       const state = {
         status: "running",
         subject: current.subject,
@@ -376,13 +413,16 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  startBtn.onclick = startTimer;
-  stopBtn.onclick = stopTimer;
+  // Bind
+  startBtn.onclick = startOrReset;
+  stopBtn.onclick = stopOrResume;
 
+  // Worker tick
   worker.onmessage = e => {
     if (e.data && e.data.type === "TICK") render();
   };
 
+  // Initial render
   const init = readState();
   if (init.status === "running") {
     setUI("running");
@@ -394,6 +434,7 @@ document.addEventListener("DOMContentLoaded", () => {
   } else {
     setUI("idle");
     display.textContent = "00:00";
+    render();
   }
 });
 
