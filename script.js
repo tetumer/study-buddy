@@ -228,7 +228,7 @@ function initStudy() {
     return;
   }
 
-  // Declare state variables
+  // State variables
   let activeSubject = localStorage.getItem("activeSubject") || null;
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
@@ -319,12 +319,15 @@ function initStudy() {
     display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
   }
 
-  // ===== Start =====
+  // ===== Start / Resume =====
   function startTimer() {
+    const savedElapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
     timerInput.disabled = true;
 
-    durationMs = setMinutes * 60 * 1000;
+    durationMs = setMinutes * 60 * 1000 - savedElapsedMs;
+    if (durationMs < 0) durationMs = 0;
+
     startTime = Date.now();
     activeSubject = subject;
 
@@ -339,24 +342,8 @@ function initStudy() {
       Notification.requestPermission().catch(() => {});
     }
 
-    // Scheduled notification (experimental, may fail)
-    if (typeof Notification !== "undefined" &&
-        Notification.permission === "granted" &&
-        "showTrigger" in Notification.prototype) {
-      try {
-        new Notification("Study Buddy", {
-          body: `⏳ ${activeSubject || subject} session ending in ${setMinutes} min`,
-          icon: "icon.png",
-          showTrigger: new TimestampTrigger(Date.now() + durationMs),
-          requireInteraction: true
-        });
-        console.log("Scheduled notification set for", setMinutes, "minutes");
-      } catch (err) {
-        console.warn("Scheduled notification failed:", err);
-      }
-    }
-
     updateTimerDisplay();
+    startBtn.textContent = "Start"; // reset button text
     startBtn.disabled = true;
     stopBtn.disabled = false;
     timerId = setInterval(updateTimerDisplay, 1000);
@@ -406,6 +393,7 @@ function initStudy() {
 
   console.log("initStudy: ready");
 }
+
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
