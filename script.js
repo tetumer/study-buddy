@@ -241,6 +241,18 @@ function addToHistory(subject, minutes, startedAt, source="finished") {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
 }
 
+// This is what the dashboard graph reads
+function onSessionComplete(subject, minutes) {
+  const studyData = JSON.parse(localStorage.getItem("studyData") || "{}");
+  const today = new Date().toLocaleDateString();
+
+  if (!studyData[today]) studyData[today] = {};
+  if (!studyData[today][subject]) studyData[today][subject] = 0;
+
+  studyData[today][subject] += minutes;
+  localStorage.setItem("studyData", JSON.stringify(studyData));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   const sound = document.getElementById("alarmSound");
   const startBtn = document.getElementById("startTimerBtn");
@@ -324,9 +336,9 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(popup);
     document.getElementById("closeAlarmBtn").onclick = stopAlarm;
 
+    // Update both history and studyData
     addToHistory(subject, plannedMinutes, startedAtISO, "finished");
-    // --- Fix: update studyData so the dashboard graph can use the finished session ---
-    try { onSessionComplete(subject, plannedMinutes); } catch(e) { console.error("onSessionComplete error:", e); }
+    onSessionComplete(subject, plannedMinutes);
   }
 
   function render() {
@@ -380,6 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (current.startedAt && current.plannedMinutes) {
         const elapsedMinutes = current.plannedMinutes - Math.round((current.remainingMs || (current.endTime - Date.now())) / 60000);
         addToHistory(subject, elapsedMinutes, new Date(current.startedAt).toISOString(), "reset");
+        onSessionComplete(subject, elapsedMinutes);
       }
       clearState();
       worker.postMessage({ type: "STOP" });
@@ -417,42 +430,7 @@ document.addEventListener("DOMContentLoaded", () => {
       writeState(pausedState);
       worker.postMessage({ type: "STOP" });
       render();
-    } else if (current.status === "paused") {
-      const resumedState = {
-        status: "running",
-        subject: current.subject,
-        endTime: Date.now() + current.remainingMs,
-        startedAt: current.startedAt,
-        plannedMinutes: current.plannedMinutes
-      };
-      writeState(resumedState);
-      worker.postMessage({ type: "START" });
-      render();
-    }
-  }
-
-  startBtn.onclick = startOrReset;
-  stopBtn.onclick = stopOrResume;
-
-  worker.onmessage = (e) => {
-    if (e.data && e.data.type === "TICK") render();
-  };
-
-   const init = readState();
-  if (init.status === "running") {
-    setUI("running");
-    worker.postMessage({ type: "START" });
-    render();
-  } else if (init.status === "paused") {
-    setUI("paused");
-    render();
-  } else {
-    setUI("idle");
-    display.textContent = "00:00";
-    render();
-  }
-});
-
+    } else if (current
 
 /* ---------------- ROUTINE PAGE ---------------- */
 function initRoutine() {
