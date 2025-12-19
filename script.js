@@ -325,6 +325,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("closeAlarmBtn").onclick = stopAlarm;
 
     addToHistory(subject, plannedMinutes, startedAtISO, "finished");
+    // --- Fix: update studyData so the dashboard graph can use the finished session ---
+    try { onSessionComplete(subject, plannedMinutes); } catch(e) { console.error("onSessionComplete error:", e); }
   }
 
   function render() {
