@@ -206,6 +206,52 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
+// Register SW early
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(console.error);
+}
+
+// Simple worker code as a blob (1s tick)
+const workerCode = `
+let interval = null;
+self.onmessage = e => {
+  const { type } = e.data || {};
+  if (type === "START") {
+    if (interval) clearInterval(interval);
+    interval = setInterval(() => postMessage({ type: "TICK", now: Date.now() }), 1000);
+  } else if (type === "STOP") {
+    if (interval) clearInterval(interval);
+    interval = null;
+  }
+};
+`;
+const worker = new Worker(URL.createObjectURL(new Blob([workerCode], { type: "application/javascript" })));
+
+const STORAGE_KEY = "studyTimerState";
+const readState = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"status":"idle"}');
+const writeState = s => localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+const clearState = () => localStorage.removeItem(STORAGE_KEY);
+
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ("wakeLock" in navigator) {
+      wakeLock = await navigator.wakeLock.request("screen");
+    }
+  } catch (_) {}
+}
+function releaseWakeLock() { try { wakeLock && wakeLock.release(); wakeLock = null; } catch (_) {} }
+
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && readState().status === "running") {
+    await requestWakeLock();
+  } else {
+    releaseWakeLock();
+  }
+});
+
+document.addEventListener("DOMContentLoaded", initStudy);
+
 function initStudy() {
   const sound = document.getElementById("alarmSound");
   const studySubjectEl = document.getElementById("studySubject");
@@ -214,128 +260,156 @@ function initStudy() {
   const timerInput = document.getElementById("timerInput");
   const display = document.getElementById("timerDisplay");
 
-  // State
-  let startTime = parseInt(localStorage.getItem("timerStart")) || null;
-  let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
-  let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
-  let timerId = null;
-
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
   studySubjectEl.textContent = `Studying: ${subject}`;
 
-  // ===== Alarm =====
-  function triggerAlarm() {
-    if (sound) {
-      sound.currentTime = 0;
-      sound.loop = true;
-      sound.play();
-    }
-    const popup = document.createElement("div");
-    popup.innerHTML = `
-      <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
-      background:#fff;padding:20px;border:2px solid #000;z-index:9999">
-        <p>⏰ Time's up! Your ${subject} session has ended.</p>
-        <button id="closeAlarmBtn">OK</button>
-      </div>`;
-    document.body.appendChild(popup);
-    document.getElementById("closeAlarmBtn").onclick = () => {
-      if (sound) {
-        sound.pause(); sound.currentTime = 0; sound.loop = false;
-      }
-      popup.remove();
-    };
-  }
-
-  // ===== Timer display =====
-  function updateTimerDisplay() {
-    if (!startTime || !durationMs) {
-      display.textContent = "00:00";
-      return;
-    }
-    const now = Date.now();
-    const remainingSec = Math.ceil((startTime + durationMs - now) / 1000);
-
-    if (remainingSec <= 0) {
-      display.textContent = "00:00";
-      clearInterval(timerId); timerId = null;
-      localStorage.clear();
-      triggerAlarm();
+  function setUI(status) {
+    if (status === "running") {
+      startBtn.textContent = "Start";
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      timerInput.disabled = true;
+    } else if (status === "paused") {
+      startBtn.textContent = "Resume";
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      timerInput.disabled = false;
+    } else {
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
       timerInput.disabled = false;
+    }
+  }
+
+  function triggerAlarm() {
+    if (sound) {
+      sound.currentTime = 0;
+      sound.loop = true;
+      sound.play().catch(() => {});
+    }
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification("Study Buddy", {
+        body: `⏰ Your ${subject} session has ended.`,
+        icon: "icon.png",
+        requireInteraction: true
+      });
+      n.onclick = () => {
+        if (sound) { sound.pause(); sound.currentTime = 0; sound.loop = false; }
+        n.close();
+      };
+    }
+    const popup = document.createElement("div");
+    popup.innerHTML = `
+      <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
+      background:#fff;padding:16px 20px;border:2px solid #000;border-radius:8px;z-index:9999">
+        <p style="margin:0 0 12px">⏰ Time's up! Your ${subject} session has ended.</p>
+        <button id="closeAlarmBtn" style="padding:8px 12px;border:1px solid #000;background:#f5f5f5">OK</button>
+      </div>`;
+    document.body.appendChild(popup);
+    document.getElementById("closeAlarmBtn").onclick = () => {
+      if (sound) { sound.pause(); sound.currentTime = 0; sound.loop = false; }
+      popup.remove();
+    };
+  }
+
+  function render() {
+    const state = readState();
+    if (state.status !== "running") {
+      display.textContent = "00:00";
+      setUI(state.status);
+      return;
+    }
+    const now = Date.now();
+    const remainingMs = Math.max(0, state.endTime - now);
+    const remainingSec = Math.ceil(remainingMs / 1000);
+
+    if (remainingSec <= 0) {
+      worker.postMessage({ type: "STOP" });
+      clearState();
+      setUI("idle");
+      display.textContent = "00:00";
+      triggerAlarm();
+      releaseWakeLock();
       return;
     }
 
     const m = Math.floor(remainingSec / 60);
     const s = remainingSec % 60;
     display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+    setUI("running");
   }
 
-  // ===== Start / Resume =====
   function startTimer() {
-    const savedElapsedMs = Date.now() - (startTime || Date.now());
-    setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
-
-    // If resuming, subtract elapsed
-    if (localStorage.getItem("timerStart") && localStorage.getItem("timerDuration")) {
-      durationMs = parseInt(localStorage.getItem("timerDuration"));
-      startTime = Date.now();
-    } else {
-      durationMs = setMinutes * 60 * 1000;
-      startTime = Date.now();
-    }
-
-    localStorage.setItem("timerStart", String(startTime));
-    localStorage.setItem("timerDuration", String(durationMs));
-    localStorage.setItem("timerSetMinutes", String(setMinutes));
-
-    // Ask notification permission
     if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission();
+      Notification.requestPermission().catch(() => {});
     }
-
-    // Tell service worker to schedule background notification
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({
-        type: "START_TIMER",
+    const current = readState();
+    let state;
+    if (current.status === "paused" && current.remainingMs > 0) {
+      const startTime = Date.now();
+      state = {
+        status: "running",
         subject,
-        durationMs
-      });
+        setMinutes: current.setMinutes,
+        startTime,
+        endTime: startTime + current.remainingMs
+      };
+    } else {
+      const setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
+      const startTime = Date.now();
+      state = {
+        status: "running",
+        subject,
+        setMinutes,
+        startTime,
+        endTime: startTime + setMinutes * 60 * 1000
+      };
     }
-
-    updateTimerDisplay();
-    startBtn.textContent = "Start";
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    timerId = setInterval(updateTimerDisplay, 1000);
+    writeState(state);
+    setUI("running");
+    render();
+    worker.postMessage({ type: "START" });
+    requestWakeLock();
   }
 
-  // ===== Stop/Pause =====
   function stopTimer() {
-    if (timerId) clearInterval(timerId);
-    timerId = null;
-    localStorage.clear();
-    startBtn.textContent = "Resume";
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    updateTimerDisplay();
+    const current = readState();
+    if (current.status === "running") {
+      const now = Date.now();
+      const remainingMs = Math.max(0, current.endTime - now);
+      writeState({ status: "paused", subject, setMinutes: current.setMinutes, remainingMs });
+    } else {
+      writeState({ status: "idle" });
+    }
+    worker.postMessage({ type: "STOP" });
+    setUI("paused");
+    display.textContent = "00:00";
+    releaseWakeLock();
   }
 
-  // Bind buttons
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
 
-  // Initial render
-  updateTimerDisplay();
+  // Worker tick updates display
+  worker.onmessage = e => {
+    if (e.data && e.data.type === "TICK") render();
+  };
 
-  // Resume if already running
-  if (startTime && durationMs) {
-    timerId = setInterval(updateTimerDisplay, 1000);
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    timerInput.disabled = true;
+  // Initial state
+  const init = readState();
+  if (init.status === "running") {
+    setUI("running");
+    worker.postMessage({ type: "START" });
+    requestWakeLock();
+    render();
+  } else if (init.status === "paused") {
+    setUI("paused");
+    display.textContent = "00:00";
+  } else {
+    setUI("idle");
+    display.textContent = "00:00";
   }
 }
 
