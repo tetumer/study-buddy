@@ -206,11 +206,6 @@ function scheduleDashboardReminderUpdates() {
 }
 
 /* ---------------- STUDY PAGE ---------------- */
-// Register SW early
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").catch(console.error);
-}
-
 // Simple worker code as a blob (1s tick)
 const workerCode = `
 let interval = null;
@@ -218,7 +213,7 @@ self.onmessage = e => {
   const { type } = e.data || {};
   if (type === "START") {
     if (interval) clearInterval(interval);
-    interval = setInterval(() => postMessage({ type: "TICK", now: Date.now() }), 1000);
+    interval = setInterval(() => postMessage({ type: "TICK" }), 1000);
   } else if (type === "STOP") {
     if (interval) clearInterval(interval);
     interval = null;
@@ -232,41 +227,20 @@ const readState = () => JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"statu
 const writeState = s => localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 const clearState = () => localStorage.removeItem(STORAGE_KEY);
 
-let wakeLock = null;
-async function requestWakeLock() {
-  try {
-    if ("wakeLock" in navigator) {
-      wakeLock = await navigator.wakeLock.request("screen");
-    }
-  } catch (_) {}
-}
-function releaseWakeLock() { try { wakeLock && wakeLock.release(); wakeLock = null; } catch (_) {} }
-
-document.addEventListener("visibilitychange", async () => {
-  if (document.visibilityState === "visible" && readState().status === "running") {
-    await requestWakeLock();
-  } else {
-    releaseWakeLock();
-  }
-});
-
-document.addEventListener("DOMContentLoaded", initStudy);
-
-function initStudy() {
+document.addEventListener("DOMContentLoaded", () => {
   const sound = document.getElementById("alarmSound");
-  const studySubjectEl = document.getElementById("studySubject");
   const startBtn = document.getElementById("startTimerBtn");
   const stopBtn = document.getElementById("stopTimerBtn");
   const timerInput = document.getElementById("timerInput");
   const display = document.getElementById("timerDisplay");
+  const backBtn = document.getElementById("backBtn");
 
-  // Lock display against edits/touches
+  // Back button fix
+  backBtn.onclick = () => history.back();
+
+  // Lock display
   display.contentEditable = false;
   display.style.pointerEvents = "none";
-
-  const params = new URLSearchParams(window.location.search);
-  const subject = params.get("subject") || "Personal Project";
-  studySubjectEl.textContent = `Studying: ${subject}`;
 
   function setUI(status) {
     if (status === "running") {
@@ -279,7 +253,7 @@ function initStudy() {
       startBtn.disabled = false;
       stopBtn.disabled = true;
       timerInput.disabled = true;
-    } else { // idle
+    } else {
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -293,29 +267,7 @@ function initStudy() {
       sound.loop = true;
       sound.play().catch(() => {});
     }
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      const n = new Notification("Study Buddy", {
-        body: `⏰ Your ${subject} session has ended.`,
-        icon: "icon.png",
-        requireInteraction: true
-      });
-      n.onclick = () => {
-        if (sound) { sound.pause(); sound.currentTime = 0; sound.loop = false; }
-        n.close();
-      };
-    }
-    const popup = document.createElement("div");
-    popup.innerHTML = `
-      <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
-      background:#fff;padding:16px 20px;border:2px solid #000;border-radius:8px;z-index:9999">
-        <p style="margin:0 0 12px">⏰ Time's up! Your ${subject} session has ended.</p>
-        <button id="closeAlarmBtn" style="padding:8px 12px;border:1px solid #000;background:#f5f5f5">OK</button>
-      </div>`;
-    document.body.appendChild(popup);
-    document.getElementById("closeAlarmBtn").onclick = () => {
-      if (sound) { sound.pause(); sound.currentTime = 0; sound.loop = false; }
-      popup.remove();
-    };
+    alert("⏰ Time's up!");
   }
 
   function render() {
@@ -331,7 +283,6 @@ function initStudy() {
         setUI("idle");
         display.textContent = "00:00";
         triggerAlarm();
-        releaseWakeLock();
         return;
       }
 
@@ -352,67 +303,49 @@ function initStudy() {
   }
 
   function startTimer() {
-    if (typeof Notification !== "undefined" && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
     const current = readState();
     let state;
     if (current.status === "paused" && current.remainingMs > 0) {
-      const startTime = Date.now();
       state = {
         status: "running",
-        subject,
-        setMinutes: current.setMinutes,
-        startTime,
-        endTime: startTime + current.remainingMs
+        endTime: Date.now() + current.remainingMs
       };
     } else {
-      const setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
-      const startTime = Date.now();
+      const minutes = Math.max(1, parseInt(timerInput.value) || 30);
       state = {
         status: "running",
-        subject,
-        setMinutes,
-        startTime,
-        endTime: startTime + setMinutes * 60 * 1000
+        endTime: Date.now() + minutes * 60 * 1000
       };
     }
     writeState(state);
     setUI("running");
     render();
     worker.postMessage({ type: "START" });
-    requestWakeLock();
   }
 
   function stopTimer() {
     const current = readState();
     if (current.status === "running") {
-      const now = Date.now();
-      const remainingMs = Math.max(0, current.endTime - now);
-      writeState({ status: "paused", subject, setMinutes: current.setMinutes, remainingMs });
+      const remainingMs = Math.max(0, current.endTime - Date.now());
+      writeState({ status: "paused", remainingMs });
     } else {
       writeState({ status: "idle" });
     }
     worker.postMessage({ type: "STOP" });
-    setUI("paused");
-    render(); // show paused time
-    releaseWakeLock();
+    render();
   }
 
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
 
-  // Worker tick updates display
   worker.onmessage = e => {
     if (e.data && e.data.type === "TICK") render();
   };
 
-  // Initial state
   const init = readState();
   if (init.status === "running") {
     setUI("running");
     worker.postMessage({ type: "START" });
-    requestWakeLock();
     render();
   } else if (init.status === "paused") {
     setUI("paused");
@@ -421,7 +354,7 @@ function initStudy() {
     setUI("idle");
     display.textContent = "00:00";
   }
-}
+});
 
 
 /* ---------------- ROUTINE PAGE ---------------- */
