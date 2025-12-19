@@ -228,6 +228,14 @@ function initStudy() {
     return;
   }
 
+  // Declare state variables
+  let activeSubject = localStorage.getItem("activeSubject") || null;
+  let startTime = parseInt(localStorage.getItem("timerStart")) || null;
+  let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
+  let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
+  let elapsedMs = parseInt(localStorage.getItem("elapsedMs")) || 0;
+  let timerId = null;
+
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
 
@@ -258,22 +266,23 @@ function initStudy() {
         }
         n.close();
       };
-    } else {
-      const popup = document.createElement("div");
-      popup.innerHTML = `
-        <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
-          background:#fff;padding:20px;border:2px solid #000;z-index:9999">
-          <p>⏰ Time's up! Your ${subj} session has ended.</p>
-          <button id="closeAlarmBtn">OK</button>
-        </div>`;
-      document.body.appendChild(popup);
-      document.getElementById("closeAlarmBtn").onclick = () => {
-        if (sound) {
-          sound.pause(); sound.currentTime = 0; sound.loop = false;
-        }
-        popup.remove();
-      };
     }
+
+    // Always show popup fallback
+    const popup = document.createElement("div");
+    popup.innerHTML = `
+      <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
+        background:#fff;padding:20px;border:2px solid #000;z-index:9999">
+        <p>⏰ Time's up! Your ${subj} session has ended.</p>
+        <button id="closeAlarmBtn">OK</button>
+      </div>`;
+    document.body.appendChild(popup);
+    document.getElementById("closeAlarmBtn").onclick = () => {
+      if (sound) {
+        sound.pause(); sound.currentTime = 0; sound.loop = false;
+      }
+      popup.remove();
+    };
   }
 
   // ===== Timer display =====
@@ -330,7 +339,7 @@ function initStudy() {
       Notification.requestPermission().catch(() => {});
     }
 
-    // Scheduled notification (Android Chrome/Edge only)
+    // Scheduled notification (experimental, may fail)
     if (typeof Notification !== "undefined" &&
         Notification.permission === "granted" &&
         "showTrigger" in Notification.prototype) {
