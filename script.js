@@ -234,44 +234,68 @@ document.addEventListener("DOMContentLoaded", () => {
   const timerInput = document.getElementById("timerInput");
   const display = document.getElementById("timerDisplay");
   const backBtn = document.getElementById("backBtn");
+  const studySubjectEl = document.getElementById("studySubject");
 
-  // Back button fix
   backBtn.onclick = () => history.back();
 
-  // Lock display
   display.contentEditable = false;
   display.style.pointerEvents = "none";
 
   function setUI(status) {
     if (status === "running") {
-      startBtn.textContent = "Start";
-      startBtn.disabled = true;
+      startBtn.textContent = "Reset"; // running → reset
+      startBtn.disabled = false;
+      stopBtn.textContent = "Stop";
       stopBtn.disabled = false;
       timerInput.disabled = true;
     } else if (status === "paused") {
-      startBtn.textContent = "Resume";
+      startBtn.textContent = "Reset"; // paused → reset
       startBtn.disabled = false;
-      stopBtn.disabled = true;
+      stopBtn.textContent = "Resume"; // stop flips to resume
+      stopBtn.disabled = false;
       timerInput.disabled = true;
-    } else {
+    } else { // idle
       startBtn.textContent = "Start";
       startBtn.disabled = false;
+      stopBtn.textContent = "Stop";
       stopBtn.disabled = true;
       timerInput.disabled = false;
     }
   }
 
-  function triggerAlarm() {
+  function stopAlarm() {
+    if (sound) {
+      sound.pause();
+      sound.currentTime = 0;
+      sound.loop = false;
+    }
+    const popup = document.getElementById("alarmPopup");
+    if (popup) popup.remove();
+  }
+
+  function triggerAlarm(subject) {
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
       sound.play().catch(() => {});
     }
-    alert("⏰ Time's up!");
+    const popup = document.createElement("div");
+    popup.id = "alarmPopup";
+    popup.innerHTML = `
+      <div style="position:fixed;top:30%;left:50%;transform:translateX(-50%);
+      background:#fff;padding:16px 20px;border:2px solid #000;border-radius:8px;z-index:9999">
+        <p style="margin:0 0 12px">⏰ Time's up! Your ${subject} session has ended.</p>
+        <button id="closeAlarmBtn" style="padding:8px 12px;border:1px solid #000;background:#f5f5f5">Stop Alarm</button>
+      </div>`;
+    document.body.appendChild(popup);
+    document.getElementById("closeAlarmBtn").onclick = stopAlarm;
   }
 
   function render() {
     const state = readState();
+    const subject = state.subject || "Personal Project";
+    studySubjectEl.textContent = `Studying: ${subject}`;
+
     if (state.status === "running") {
       const now = Date.now();
       const remainingMs = Math.max(0, state.endTime - now);
@@ -282,7 +306,7 @@ document.addEventListener("DOMContentLoaded", () => {
         clearState();
         setUI("idle");
         display.textContent = "00:00";
-        triggerAlarm();
+        triggerAlarm(subject);
         return;
       }
 
@@ -304,19 +328,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function startTimer() {
     const current = readState();
-    let state;
-    if (current.status === "paused" && current.remainingMs > 0) {
-      state = {
-        status: "running",
-        endTime: Date.now() + current.remainingMs
-      };
-    } else {
-      const minutes = Math.max(1, parseInt(timerInput.value) || 30);
-      state = {
-        status: "running",
-        endTime: Date.now() + minutes * 60 * 1000
-      };
+    let subject = current.subject;
+    if (!subject || current.status === "idle") {
+      const params = new URLSearchParams(window.location.search);
+      subject = params.get("subject") || "Personal Project";
     }
+
+    // Reset if already running/paused
+    if (current.status === "running" || current.status === "paused") {
+      clearState();
+      worker.postMessage({ type: "STOP" });
+      stopAlarm();
+      setUI("idle");
+      display.textContent = "00:00";
+      return;
+    }
+
+    const minutes = Math.max(1, parseInt(timerInput.value) || 30);
+    const state = {
+      status: "running",
+      subject,
+      endTime: Date.now() + minutes * 60 * 1000
+    };
     writeState(state);
     setUI("running");
     render();
@@ -327,12 +360,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const current = readState();
     if (current.status === "running") {
       const remainingMs = Math.max(0, current.endTime - Date.now());
-      writeState({ status: "paused", remainingMs });
-    } else {
-      writeState({ status: "idle" });
+      writeState({ status: "paused", subject: current.subject, remainingMs });
+      worker.postMessage({ type: "STOP" });
+      render();
+    } else if (current.status === "paused") {
+      // Resume
+      const state = {
+        status: "running",
+        subject: current.subject,
+        endTime: Date.now() + current.remainingMs
+      };
+      writeState(state);
+      worker.postMessage({ type: "START" });
+      render();
     }
-    worker.postMessage({ type: "STOP" });
-    render();
   }
 
   startBtn.onclick = startTimer;
