@@ -260,6 +260,10 @@ function initStudy() {
   const timerInput = document.getElementById("timerInput");
   const display = document.getElementById("timerDisplay");
 
+  // Lock display against edits/touches
+  display.contentEditable = false;
+  display.style.pointerEvents = "none";
+
   const params = new URLSearchParams(window.location.search);
   const subject = params.get("subject") || "Personal Project";
   studySubjectEl.textContent = `Studying: ${subject}`;
@@ -274,8 +278,8 @@ function initStudy() {
       startBtn.textContent = "Resume";
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      timerInput.disabled = false;
-    } else {
+      timerInput.disabled = true;
+    } else { // idle
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.disabled = true;
@@ -316,29 +320,35 @@ function initStudy() {
 
   function render() {
     const state = readState();
-    if (state.status !== "running") {
-      display.textContent = "00:00";
-      setUI(state.status);
-      return;
-    }
-    const now = Date.now();
-    const remainingMs = Math.max(0, state.endTime - now);
-    const remainingSec = Math.ceil(remainingMs / 1000);
+    if (state.status === "running") {
+      const now = Date.now();
+      const remainingMs = Math.max(0, state.endTime - now);
+      const remainingSec = Math.ceil(remainingMs / 1000);
 
-    if (remainingSec <= 0) {
-      worker.postMessage({ type: "STOP" });
-      clearState();
+      if (remainingSec <= 0) {
+        worker.postMessage({ type: "STOP" });
+        clearState();
+        setUI("idle");
+        display.textContent = "00:00";
+        triggerAlarm();
+        releaseWakeLock();
+        return;
+      }
+
+      const m = Math.floor(remainingSec / 60);
+      const s = remainingSec % 60;
+      display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      setUI("running");
+    } else if (state.status === "paused" && state.remainingMs) {
+      const remainingSec = Math.ceil(state.remainingMs / 1000);
+      const m = Math.floor(remainingSec / 60);
+      const s = remainingSec % 60;
+      display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
+      setUI("paused");
+    } else {
+      display.textContent = "00:00";
       setUI("idle");
-      display.textContent = "00:00";
-      triggerAlarm();
-      releaseWakeLock();
-      return;
     }
-
-    const m = Math.floor(remainingSec / 60);
-    const s = remainingSec % 60;
-    display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
-    setUI("running");
   }
 
   function startTimer() {
@@ -385,7 +395,7 @@ function initStudy() {
     }
     worker.postMessage({ type: "STOP" });
     setUI("paused");
-    display.textContent = "00:00";
+    render(); // show paused time
     releaseWakeLock();
   }
 
@@ -406,7 +416,7 @@ function initStudy() {
     render();
   } else if (init.status === "paused") {
     setUI("paused");
-    display.textContent = "00:00";
+    render();
   } else {
     setUI("idle");
     display.textContent = "00:00";
