@@ -214,6 +214,7 @@ function initStudy() {
   const timerInput = document.getElementById("timerInput");
   const display = document.getElementById("timerDisplay");
 
+  // State
   let startTime = parseInt(localStorage.getItem("timerStart")) || null;
   let durationMs = parseInt(localStorage.getItem("timerDuration")) || null;
   let setMinutes = parseInt(localStorage.getItem("timerSetMinutes")) || 0;
@@ -223,6 +224,7 @@ function initStudy() {
   const subject = params.get("subject") || "Personal Project";
   studySubjectEl.textContent = `Studying: ${subject}`;
 
+  // ===== Alarm =====
   function triggerAlarm() {
     if (sound) {
       sound.currentTime = 0;
@@ -245,6 +247,7 @@ function initStudy() {
     };
   }
 
+  // ===== Timer display =====
   function updateTimerDisplay() {
     if (!startTime || !durationMs) {
       display.textContent = "00:00";
@@ -270,10 +273,19 @@ function initStudy() {
     display.textContent = `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;
   }
 
+  // ===== Start / Resume =====
   function startTimer() {
+    const savedElapsedMs = Date.now() - (startTime || Date.now());
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
-    durationMs = setMinutes * 60 * 1000;
-    startTime = Date.now();
+
+    // If resuming, subtract elapsed
+    if (localStorage.getItem("timerStart") && localStorage.getItem("timerDuration")) {
+      durationMs = parseInt(localStorage.getItem("timerDuration"));
+      startTime = Date.now();
+    } else {
+      durationMs = setMinutes * 60 * 1000;
+      startTime = Date.now();
+    }
 
     localStorage.setItem("timerStart", String(startTime));
     localStorage.setItem("timerDuration", String(durationMs));
@@ -300,21 +312,26 @@ function initStudy() {
     timerId = setInterval(updateTimerDisplay, 1000);
   }
 
+  // ===== Stop/Pause =====
   function stopTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
     localStorage.clear();
-    startBtn.textContent = "Start";
+    startBtn.textContent = "Resume";
     startBtn.disabled = false;
     stopBtn.disabled = true;
     updateTimerDisplay();
   }
 
+  // Bind buttons
   startBtn.onclick = startTimer;
   stopBtn.onclick = stopTimer;
 
+  // Initial render
   updateTimerDisplay();
-  if (!timerId && startTime && durationMs) {
+
+  // Resume if already running
+  if (startTime && durationMs) {
     timerId = setInterval(updateTimerDisplay, 1000);
     startBtn.disabled = true;
     stopBtn.disabled = false;
