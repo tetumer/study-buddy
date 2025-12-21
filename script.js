@@ -255,13 +255,43 @@ function initStudy() {
   let startTime = null;
   let durationMs = null;
   let setMinutes = 0;
+  let endTime = null;
+  let audioUnlocked = false;
+
+  // ---- Audio unlock for mobile autoplay policies ----
+  function unlockAlarmAudio() {
+    if (!sound || audioUnlocked) return;
+    try {
+      sound.load?.();
+      sound.muted = true;
+      sound.loop = false;
+      sound.currentTime = 0;
+      const p = sound.play();
+      if (p && typeof p.then === "function") {
+        p.then(() => {
+          sound.pause();
+          sound.muted = false;
+          audioUnlocked = true;
+          console.log("Alarm audio unlocked");
+        }).catch(() => {
+          sound.muted = false;
+          console.warn("Alarm audio unlock attempt failed");
+        });
+      } else {
+        sound.pause();
+        sound.muted = false;
+        audioUnlocked = true;
+      }
+    } catch (e) {
+      console.warn("Alarm audio unlock error", e);
+    }
+  }
 
   // Alarm helpers
   function stopAlarm() {
     if (sound) {
-      sound.loop = false;       // disable looping first
-      sound.pause();            // stop playback
-      // reset currentTime after pause to avoid mobile bug
+      sound.loop = false;
+      sound.pause();
       setTimeout(() => { sound.currentTime = 0; }, 50);
     }
     const popup = document.getElementById("alarmPopup");
@@ -272,7 +302,9 @@ function initStudy() {
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
-      sound.play().catch(() => {});
+      sound.play().catch(() => {
+        console.warn("Alarm play blocked; waiting for user gesture");
+      });
     }
     const existing = document.getElementById("alarmPopup");
     if (existing) existing.remove();
@@ -290,12 +322,12 @@ function initStudy() {
 
   // Display update
   function updateTimerDisplay() {
-    if (!running || !startTime || durationMs == null) {
+    if (!running || !startTime || durationMs == null || !endTime) {
       display.textContent = "00:00";
       return;
     }
     const now = Date.now();
-    const remainingMs = (startTime + durationMs) - now;
+    const remainingMs = endTime - now;
     const remainingSec = Math.ceil(Math.max(0, remainingMs) / 1000);
 
     if (remainingSec <= 0) {
@@ -303,6 +335,7 @@ function initStudy() {
       started = false;
       startTime = null;
       durationMs = null;
+      endTime = null;
 
       display.textContent = "00:00";
       worker.postMessage({ type: "STOP" });
@@ -331,6 +364,7 @@ function initStudy() {
       startTime = null;
       durationMs = null;
       setMinutes = 0;
+      endTime = null;
 
       worker.postMessage({ type: "STOP" });
       stopAlarm();
@@ -348,11 +382,13 @@ function initStudy() {
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
     durationMs = setMinutes * 60 * 1000;
     startTime = Date.now();
+    endTime = startTime + durationMs;
     started = true;
     running = true;
 
+    unlockAlarmAudio();
+
     startBtn.textContent = "Reset";
-    startBtn.disabled = false;
     stopBtn.textContent = "Stop";
     stopBtn.disabled = false;
     timerInput.disabled = true;
@@ -367,7 +403,7 @@ function initStudy() {
 
     if (running) {
       const now = Date.now();
-      durationMs = Math.max(0, (startTime + durationMs) - now);
+      durationMs = Math.max(0, endTime - now);
       running = false;
 
       worker.postMessage({ type: "STOP" });
@@ -380,7 +416,10 @@ function initStudy() {
       console.log("Timer paused, remainingMs =", durationMs);
     } else {
       startTime = Date.now();
+      endTime = startTime + durationMs;
       running = true;
+
+      unlockAlarmAudio();
 
       worker.postMessage({ type: "START" });
 
@@ -397,6 +436,13 @@ function initStudy() {
   worker.onmessage = (e) => {
     if (e.data && e.data.type === "TICK") updateTimerDisplay();
   };
+
+  // Visibility handler: catch up if tab was hidden
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      updateTimerDisplay();
+    }
+  });
 
   // Bind buttons
   startBtn.onclick = startOrReset;
