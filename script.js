@@ -250,31 +250,30 @@ function initStudy() {
   studySubjectEl.textContent = `Studying: ${subject}`;
 
   // State
-  let started = false;          // has a session been started (running or paused)
-  let running = false;          // currently ticking
-  let startTime = null;         // ms epoch when run cycle started
-  let durationMs = null;        // remaining duration in ms
-  let setMinutes = 0;           // planned minutes for session
+  let started = false;
+  let running = false;
+  let startTime = null;
+  let durationMs = null;
+  let setMinutes = 0;
 
   // Alarm helpers
   function stopAlarm() {
     if (sound) {
-      sound.pause();
-      sound.currentTime = 0;
-      sound.loop = false;
+      sound.loop = false;       // disable looping first
+      sound.pause();            // stop playback
+      // reset currentTime after pause to avoid mobile bug
+      setTimeout(() => { sound.currentTime = 0; }, 50);
     }
     const popup = document.getElementById("alarmPopup");
     if (popup) popup.remove();
   }
 
   function notifyTimerEnd(subj) {
-    // Play alarm
     if (sound) {
       sound.currentTime = 0;
       sound.loop = true;
       sound.play().catch(() => {});
     }
-    // Minimal popup with stop control
     const existing = document.getElementById("alarmPopup");
     if (existing) existing.remove();
     const popup = document.createElement("div");
@@ -289,7 +288,7 @@ function initStudy() {
     document.getElementById("closeAlarmBtn").onclick = stopAlarm;
   }
 
-  // Display update (called on each worker tick)
+  // Display update
   function updateTimerDisplay() {
     if (!running || !startTime || durationMs == null) {
       display.textContent = "00:00";
@@ -300,7 +299,6 @@ function initStudy() {
     const remainingSec = Math.ceil(Math.max(0, remainingMs) / 1000);
 
     if (remainingSec <= 0) {
-      // Finish
       running = false;
       started = false;
       startTime = null;
@@ -309,11 +307,9 @@ function initStudy() {
       display.textContent = "00:00";
       worker.postMessage({ type: "STOP" });
 
-      // Dashboard + alarm
       onSessionComplete(subject, setMinutes);
       notifyTimerEnd(subject);
 
-      // Reset UI
       startBtn.textContent = "Start";
       startBtn.disabled = false;
       stopBtn.textContent = "Stop";
@@ -327,11 +323,9 @@ function initStudy() {
     display.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
-  // Button cycle:
-  // Start -> Reset, Stop -> Resume, Resume -> Stop, Reset -> Start
+  // Button cycle
   function startOrReset() {
     if (started) {
-      // Reset: clear everything to idle
       running = false;
       started = false;
       startTime = null;
@@ -351,21 +345,18 @@ function initStudy() {
       return;
     }
 
-    // Start new session
     setMinutes = Math.max(1, parseInt(timerInput.value) || 30);
     durationMs = setMinutes * 60 * 1000;
     startTime = Date.now();
     started = true;
     running = true;
 
-    // UI
     startBtn.textContent = "Reset";
     startBtn.disabled = false;
     stopBtn.textContent = "Stop";
     stopBtn.disabled = false;
     timerInput.disabled = true;
 
-    // Kick off
     updateTimerDisplay();
     worker.postMessage({ type: "START" });
     console.log("Timer started", { setMinutes, durationMs });
@@ -375,9 +366,7 @@ function initStudy() {
     if (!started) return;
 
     if (running) {
-      // Stop -> pause
       const now = Date.now();
-      // Reduce duration by elapsed in this run cycle
       durationMs = Math.max(0, (startTime + durationMs) - now);
       running = false;
 
@@ -390,7 +379,6 @@ function initStudy() {
 
       console.log("Timer paused, remainingMs =", durationMs);
     } else {
-      // Resume -> running
       startTime = Date.now();
       running = true;
 
